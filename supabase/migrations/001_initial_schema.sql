@@ -5,7 +5,8 @@
 -- =============================================================
 
 -- Enable extensions
-create extension if not exists "uuid-ossp";
+-- uuid-ossp is NOT needed: gen_random_uuid() is built into PostgreSQL 13+
+-- vector extension for pgvector (RAG semantic search)
 create extension if not exists "vector";
 
 -- =============================================================
@@ -37,7 +38,7 @@ comment on table public.users is 'Application user profiles, linked to auth.user
 -- Content stored as TEXT directly in PostgreSQL (not Storage)
 -- =============================================================
 create table public.notes (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
   path text not null,            -- e.g. '@me/profile.md', 'Work/Learn Python/goal.md'
   title text not null,
@@ -58,7 +59,7 @@ comment on column public.notes.is_readonly is 'True for system-generated files l
 -- embedding_queue (processed by Edge Function every 2-3 min)
 -- =============================================================
 create table public.embedding_queue (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   note_id uuid not null references public.notes(id) on delete cascade,
   status text not null default 'pending', -- pending | processing | done | error
   created_at timestamptz not null default now()
@@ -70,7 +71,7 @@ comment on table public.embedding_queue is 'Queue for async embedding generation
 -- embeddings (pgvector for RAG)
 -- =============================================================
 create table public.embeddings (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   note_id uuid not null references public.notes(id) on delete cascade,
   chunk_index integer not null default 0,
   content text not null,
