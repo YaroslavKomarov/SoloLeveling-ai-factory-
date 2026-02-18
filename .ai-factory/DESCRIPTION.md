@@ -100,7 +100,7 @@ Context management: rolling summary + last N messages (prevents context overflow
 Users, Spheres, Goals, Quests/Key Results, Tasks (with spaced repetition state), Daily Fatigue, Notes (content as TEXT + metadata columns; images in Storage), Embedding Queue, Embeddings (pgvector), Behavior Patterns, Retrospectives, Google Calendar event cache.
 
 ## Design System
-Dark gothic minimalism. Full spec in `/knowledge/design/`:
+Dark gothic minimalism. Full spec in `./design/`:
 - **Background:** `#0a0c10` with animated canvas (50 particles + grid)
 - **Fonts:** Cinzel (headings, buttons), Cormorant (body), Orbitron (numbers/stats)
 - **Colors:** White-only UI; activity colors only in fatigue indicators (cyan/pink/purple)

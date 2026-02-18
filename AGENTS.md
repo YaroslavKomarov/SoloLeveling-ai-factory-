@@ -3,152 +3,201 @@
 > Project map for AI agents. Keep this file up-to-date as the project evolves.
 
 ## Project Overview
-SoloLeveling v2 is a PWA for goal planning and achievement using the ASE v3.0 methodology. It gamifies 90-day OKR-based goals through AI agents (LangGraph.js), spaced repetition, a dark gothic UI, and deep Google Calendar integration.
+SoloLeveling v2 is a PWA for goal planning and achievement using the ASE v3.0 methodology. It gamifies 90-day OKR-based goals through AI agents (Vercel AI SDK), spaced repetition, a dark gothic UI, and deep Google Calendar integration.
 
 ## Tech Stack
-- **Language:** TypeScript (strict)
-- **Framework:** Next.js 14+ (App Router, Server Components)
-- **Styling:** Tailwind CSS (custom design system)
-- **State:** Zustand
+- **Language:** TypeScript (strict, noUncheckedIndexedAccess)
+- **Framework:** Next.js 15 (App Router, Server Components, Server Actions)
+- **Styling:** Tailwind CSS v3 (custom design tokens)
+- **State:** Zustand v5
 - **Forms/Validation:** React Hook Form + Zod
 - **Charts:** Recharts
 - **Animations:** Framer Motion + Canvas API
 - **Database:** Supabase (PostgreSQL + pgvector + Auth + Storage + Realtime)
-- **AI Agents:** Vercel AI SDK (streamText, generateObject, tool use)
+- **AI Agents:** Vercel AI SDK (`streamText`, `generateObject`, tool use)
 - **LLM:** Anthropic SDK directly — Haiku 4.5 (planner/RAG), Sonnet 4.6 (generator/analyzer)
 - **Calendar:** Google Calendar API (OAuth 2.0, read-only)
+- **Icons:** lucide-react (no emojis, no filled icons)
+- **Tests:** Vitest + @testing-library/react
 - **Deploy:** Vercel + Supabase Cloud + PWA (service workers)
 
-## Project Structure (planned)
+## Phase 1 Status: Complete
+
+All 16 tasks of Phase 1 Foundation implemented and tests passing (37/37).
+
+## Project Structure (actual)
+
 ```
-SoloLevelingV2/                        # Application root (to be created)
-├── app/                               # Next.js App Router
-│   ├── (auth)/                        # Auth routes (login, register, onboarding)
-│   ├── (app)/                         # Protected app routes
-│   │   ├── dashboard/                 # Daily task view + fatigue panel
-│   │   ├── goals/                     # Goals list, goal detail, quest progress
-│   │   ├── knowledge/                 # Three-panel knowledge base (Obsidian-compatible)
-│   │   ├── retrospective/             # Weekly retrospective wizard
-│   │   └── settings/                  # Calendar, timezone, activity window
-│   ├── api/                           # API routes
-│   │   ├── agents/                    # LangGraph.js agent endpoints
-│   │   ├── calendar/                  # Google Calendar OAuth + webhooks
-│   │   └── cron/                      # Nightly planning (00:00 logic)
-│   └── layout.tsx                     # Root layout (nav + user panel + AnimatedBackground)
-├── components/
-│   ├── ui/                            # Design system primitives (buttons, cards, inputs)
-│   ├── agents/                        # Agent chat interfaces (goal dialog, RAG chat)
-│   ├── goals/                         # Goal cards, quest progress, skill tree
-│   ├── tasks/                         # Task list, task execution, timer
-│   ├── fatigue/                       # Fatigue bars, warning indicators
-│   ├── knowledge/                     # File tree, markdown editor, graph view
-│   ├── retrospective/                 # Wizard modal, stats charts
-│   └── layout/                        # Navigation, UserPanel, AnimatedBackground
-├── lib/
-│   ├── agents/                        # Vercel AI SDK agent definitions
-│   │   ├── goal-generator.ts          # Goal creation + quest/task plan generation (Sonnet 4.6)
-│   │   ├── daily-planner.ts           # Nightly scheduling + skip detection (Haiku 4.5)
-│   │   ├── task-redistributor.ts      # Compaction algorithm for missed strategic tasks (Haiku 4.5)
-│   │   ├── retrospective-analyzer.ts  # Weekly analysis + pattern detection (Sonnet 4.6)
-│   │   ├── knowledge-rag.ts           # pgvector semantic search + wikilinks traversal (Haiku 4.5)
-│   │   └── goal-dialog-agent.ts       # Mentor agent for strategic task execution (Sonnet 4.6)
-│   ├── supabase/                      # Supabase client, types, queries
-│   ├── calendar/                      # Google Calendar API client
-│   ├── scheduling/                    # Interleaving + break rules + slot allocation
-│   └── spaced-repetition/             # Ebbinghaus algorithm
-├── prompts/                           # Versioned LLM prompts (one file per agent)
-├── tools/                             # Agent tool schemas (Vercel AI SDK)
-├── knowledge/                         # Local design references (READ-ONLY)
-│   └── design/                        # ui-style.md, colors.md, typography.md, etc.
-├── public/                            # PWA assets, service worker
-├── START_PROJECT.md                   # Full project specification (source of truth)
-└── supabase/
-    └── migrations/                    # Database migrations
+SoloLevelingAiFactory/
+├── src/
+│   ├── app/
+│   │   ├── (auth)/                         # Auth layout (centered, no nav)
+│   │   │   ├── layout.tsx
+│   │   │   ├── login/page.tsx              # Login (email/password + Google OAuth)
+│   │   │   ├── register/page.tsx           # Registration
+│   │   │   └── onboarding/
+│   │   │       ├── page.tsx                # 5-step wizard controller
+│   │   │       └── actions.ts              # Server Actions for onboarding
+│   │   ├── (app)/                          # Protected app layout (nav + userpanel)
+│   │   │   ├── layout.tsx                  # Fetches user data server-side
+│   │   │   ├── dashboard/page.tsx          # Dashboard (Phase 2 placeholder)
+│   │   │   └── settings/
+│   │   │       ├── page.tsx                # Server Component (fetches profile)
+│   │   │       └── SettingsClient.tsx      # Client form (calendar, profile, retro, logout)
+│   │   ├── api/
+│   │   │   ├── auth/
+│   │   │   │   ├── callback/route.ts       # Supabase OAuth code exchange
+│   │   │   │   └── logout/route.ts         # POST signOut → redirect /login
+│   │   │   └── calendar/
+│   │   │       ├── connect/route.ts        # GET → redirect to Google OAuth
+│   │   │       ├── callback/route.ts       # GET → exchange code, encrypt tokens, save
+│   │   │       ├── disconnect/route.ts     # POST → clear calendar tokens
+│   │   │       └── status/route.ts         # GET → { connected: bool }
+│   │   ├── layout.tsx                      # Root layout: fonts + AnimatedBackground
+│   │   ├── page.tsx                        # / → redirect /login
+│   │   └── globals.css                     # Design tokens + typography + scrollbar + glow utilities
+│   ├── components/
+│   │   ├── layout/
+│   │   │   ├── AnimatedBackground.tsx      # Canvas: 50 particles + grid (fixed, z-index 0)
+│   │   │   ├── Navigation.tsx              # Fixed top nav: Dashboard/Goals/Knowledge/Settings
+│   │   │   ├── UserPanel.tsx               # Fixed right: LVL, XP bar, 3 fatigue bars, settings link
+│   │   │   └── PageTransition.tsx          # Framer Motion slide transition (keyed by pathname)
+│   │   ├── ui/
+│   │   │   ├── Button.tsx                  # default/ghost/destructive × sm/default/lg/icon + isLoading
+│   │   │   ├── Card.tsx                    # Card + CardHeader + CardTitle + CardContent + CardFooter
+│   │   │   ├── Input.tsx                   # Input + Textarea (error state, focus ring)
+│   │   │   ├── Progress.tsx                # Progress bar (white/physical/emotional/intellectual)
+│   │   │   ├── Badge.tsx                   # Badge (default/connected/error)
+│   │   │   └── index.ts                    # Barrel export
+│   │   └── onboarding/
+│   │       ├── WelcomeStep.tsx             # Step 1: Animated welcome
+│   │       ├── ProfileSetupStep.tsx        # Step 2: Name + timezone + activity window
+│   │       ├── CalendarStep.tsx            # Step 3: Google Calendar connect (mandatory)
+│   │       ├── RetroScheduleStep.tsx       # Step 4: Day + time for weekly retro
+│   │       └── CompleteStep.tsx            # Step 5: Done → Dashboard or New Sphere
+│   ├── lib/
+│   │   ├── logger.ts                       # createLogger(module) — LOG_LEVEL env var
+│   │   ├── auth/
+│   │   │   ├── actions.ts                  # loginAction, registerAction, googleOAuthAction
+│   │   │   └── validation.ts               # loginSchema, registerSchema (Zod)
+│   │   ├── calendar/
+│   │   │   ├── encryption.ts               # AES-256-GCM encryptToken/decryptToken
+│   │   │   ├── oauth.ts                    # generateAuthUrl, exchangeCodeForTokens
+│   │   │   └── client.ts                   # getCalendarEvents (Google Calendar API)
+│   │   ├── me-profile/
+│   │   │   ├── templates.ts                # Markdown generators for 6 @me files
+│   │   │   └── initialize.ts               # initializeUserProfile — creates notes in DB
+│   │   ├── settings/
+│   │   │   └── actions.ts                  # updateProfileSettings, updateRetroSettings
+│   │   └── supabase/
+│   │       ├── types.ts                    # Database type definitions (mirrors migration)
+│   │       ├── client.ts                   # createClient() — browser singleton
+│   │       ├── server.ts                   # createClient() — SSR with cookie handling
+│   │       ├── admin.ts                    # createAdminClient() — service role (server-only)
+│   │       ├── notes.ts                    # createNote, getNoteByPath, updateNote, listNotesByPrefix
+│   │       └── index.ts                    # Barrel export
+│   ├── middleware.ts                        # Route protection: /app/* auth + onboarding guard
+│   ├── store/
+│   │   ├── user.ts                         # Zustand: level, xp, xpToNext, fatigue
+│   │   └── onboarding.ts                   # Zustand: currentStep, data
+│   └── test/
+│       ├── setup.ts                        # @testing-library/jest-dom
+│       ├── auth/middleware.test.ts          # Route protection logic (10 tests)
+│       ├── calendar/encryption.test.ts     # AES-256-GCM round-trip (6 tests)
+│       ├── me-profile/initialize.test.ts   # Profile init + templates (8 tests)
+│       ├── supabase/notes.test.ts          # Note CRUD with mock client (7 tests)
+│       └── components/Button.test.tsx      # Button component (6 tests)
+├── supabase/
+│   └── migrations/
+│       └── 001_initial_schema.sql          # users, notes, embedding_queue, embeddings + RLS + triggers
+├── design/                                 # READ-ONLY design reference files
+│   ├── ui-style.md                         # Visual design rules
+│   ├── colors.md                           # Color palette
+│   ├── typography.md                       # Font rules
+│   ├── components.md                       # Component rules
+│   ├── animations.md                       # AnimatedBackground + Framer Motion
+│   └── icons.md                            # Lucide icon mapping
+├── .ai-factory/
+│   ├── DESCRIPTION.md                      # Condensed project spec for AI context
+│   └── features/
+│       └── feature-phase-1-foundation.md  # Phase 1 plan (all tasks complete)
+├── .env.local.example                      # Required env vars template
+├── next.config.ts
+├── tailwind.config.ts
+├── tsconfig.json
+├── vitest.config.ts
+├── package.json
+├── AGENTS.md                               # This file
+└── START_PROJECT.md                        # Full project specification
 ```
 
 ## Key Entry Points
 | File | Purpose |
 |------|---------|
 | `START_PROJECT.md` | Full project specification — 38 scenarios, 7 flows |
-| `design/ui-style.md` | Visual design principles (source of truth) |
-| `design/colors.md` | Color palette |
-| `design/typography.md` | Fonts: Cinzel, Cormorant, Orbitron |
-| `design/components.md` | UI component rules |
-| `design/animations.md` | AnimatedBackground + Framer Motion rules |
-| `design/icons.md` | Lucide icon mapping (no emojis) |
-| `app/api/cron/` | Nightly 00:00 logic (fatigue reset, skip detection, planning) — to be created |
-| `lib/agents/` | All 6 Vercel AI SDK agents — to be created |
-| `prompts/` | Versioned LLM prompts — to be created |
+| `src/middleware.ts` | Route protection (auth + onboarding guard) |
+| `src/app/layout.tsx` | Root layout: Google Fonts, AnimatedBackground |
+| `src/app/(app)/layout.tsx` | Protected layout: Navigation + UserPanel |
+| `src/lib/logger.ts` | Shared logger — control via `LOG_LEVEL` env var |
+| `src/lib/supabase/types.ts` | Database types (mirrors migration) |
+| `supabase/migrations/001_initial_schema.sql` | Full DB schema |
+| `design/ui-style.md` | Visual design rules (source of truth) |
+| `design/animations.md` | AnimatedBackground + Framer Motion specs |
 
-## Agent Map
-| Agent | File | Trigger |
-|-------|------|---------|
-| goal-generator | `lib/agents/goal-generator.ts` | User starts goal creation dialog (Sonnet 4.6) |
-| daily-planner | `lib/agents/daily-planner.ts` | Nightly cron at 00:00 (Haiku 4.5) |
-| task-redistributor | `lib/agents/task-redistributor.ts` | Missed strategic tasks at 00:00 (Haiku 4.5) |
-| retrospective-analyzer | `lib/agents/retrospective-analyzer.ts` | Weekly retrospective scheduled (Sonnet 4.6) |
-| knowledge-rag | `lib/agents/knowledge-rag.ts` | RAG chat query in KB right panel (Haiku 4.5) |
-| goal-dialog-agent | `lib/agents/goal-dialog-agent.ts` | Strategic task execution; goal consultation (Sonnet 4.6) |
+## Agent Map (Phase 2+)
+| Agent | File (planned) | Model |
+|-------|----------------|-------|
+| goal-generator | `src/lib/agents/goal-generator.ts` | Sonnet 4.6 |
+| daily-planner | `src/lib/agents/daily-planner.ts` | Haiku 4.5 |
+| task-redistributor | `src/lib/agents/task-redistributor.ts` | Haiku 4.5 |
+| retrospective-analyzer | `src/lib/agents/retrospective-analyzer.ts` | Sonnet 4.6 |
+| knowledge-rag | `src/lib/agents/knowledge-rag.ts` | Haiku 4.5 |
+| goal-dialog-agent | `src/lib/agents/goal-dialog-agent.ts` | Sonnet 4.6 |
 
-## Database Schema (key entities)
-| Entity | Notes |
-|--------|-------|
-| `users` | Profile, level, XP, calendar token, activity window |
-| `spheres` | Life domains (Work, Health, etc.) |
-| `goals` | Type (skill/knowledge), status, 90-day window |
-| `quests` | Key results with numeric target/current |
-| `tasks` | Type (regular/strategic), spaced repetition state, fatigue cost |
-| `daily_fatigue` | Physical/Emotional/Intellectual per user per day |
-| `notes` | Metadata + `content TEXT` in PostgreSQL; images in Supabase Storage |
-| `embeddings` | pgvector for RAG |
-| `patterns` | Behavior patterns (auto-updated by retrospective agent) |
-| `retrospectives` | Weekly sessions with feedback + applied changes |
-| `calendar_cache` | Google Calendar events cache |
+## Database Schema (Phase 1)
+| Table | Notes |
+|-------|-------|
+| `users` | Profile, level, XP, calendar token (encrypted), activity window, onboarding status |
+| `notes` | Markdown content as TEXT in PostgreSQL; path-based hierarchy (`@me/`, `{sphere}/`) |
+| `embedding_queue` | Async queue for pgvector embedding generation |
+| `embeddings` | pgvector(1536) for RAG semantic search |
+
+## Env Variables
+See `.env.local.example`. Required for full functionality:
+- `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` + `SUPABASE_SERVICE_ROLE_KEY`
+- `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` + `GOOGLE_REDIRECT_URI`
+- `TOKEN_ENCRYPTION_KEY` — 64 hex chars (32 bytes) for AES-256-GCM
 
 ## Design Rules (quick reference)
-- Background: `#0a0c10` + animated canvas (50 particles)
-- Fonts: Cinzel (headings/buttons), Cormorant (body), Orbitron (XP/stats)
-- Colors: white-only UI; cyan/pink/purple ONLY in fatigue indicators
-- Icons: Lucide React only; NO emojis, NO filled icons
-- Nav: fixed top; User panel: always visible (avatar + level + XP bar + 3 fatigue bars)
-- Border-radius: 0 by default (exceptions: buttons `md`, dialogs `lg`, tabs `xl`)
-- Animations: Framer Motion spring (200–400ms); canvas background (rAF)
+- Background: `#0a0c10` + animated canvas (50 particles + 50×50 grid)
+- Fonts: Cinzel (headings/buttons), Cormorant (body/inputs), Orbitron (XP/stats numbers)
+- Colors: white-only UI; cyan `#00d4ff` / pink `#ec4899` / purple `#a855f7` ONLY in fatigue bars
+- Icons: Lucide React only; NO emojis
+- Nav: fixed top 56px; UserPanel: fixed right 220px (always visible)
+- Border-radius: 0 default; `md` buttons/inputs, `lg` dialogs, `xl` tabs, `full` progress
+- Animations: Framer Motion (200–400ms); canvas background (requestAnimationFrame)
+- Logging: configurable via `LOG_LEVEL` env var (debug/info/warn/error)
+
+## Running the Project
+```bash
+npm run dev      # Development server
+npm test         # Run all 37 unit tests
+npm run build    # Production build
+```
 
 ## Documentation
 | Document | Path | Description |
 |----------|------|-------------|
-| Full Spec | START_PROJECT.md | 38 user scenarios across 7 flows — source of truth |
+| Full Spec | START_PROJECT.md | 38 user scenarios across 7 flows |
 | Design | design/ | Visual style, colors, typography, components, animations, icons |
-| Project Spec | .ai-factory/DESCRIPTION.md | Condensed project spec for AI context |
-
-## AI Context Files
-| File | Purpose |
-|------|---------|
-| AGENTS.md | This file — project structure map |
-| .ai-factory/DESCRIPTION.md | Condensed project spec for AI context |
-| .ai-factory.json | AI Factory configuration |
-| START_PROJECT.md | Full specification (38 scenarios, business rules) |
-
-## AI Factory Skills Available
-| Command | Purpose |
-|---------|---------|
-| /ai-factory.task | Create step-by-step implementation plan |
-| /ai-factory.feature | Plan + implement a specific feature |
-| /ai-factory.implement | Execute existing implementation plan |
-| /ai-factory.fix | Debug and fix bugs |
-| /ai-factory.review | Code review |
-| /ai-factory.commit | Git commit workflow |
-| /ai-factory.docs | Generate documentation |
-| /ai-factory.dockerize | Containerize the project |
-| /ai-factory.ci | Set up CI/CD |
-| /ai-factory.verify | Run tests and verify |
-| /ai-factory.architecture | Architecture guidance |
+| Project Spec | .ai-factory/DESCRIPTION.md | Condensed spec for AI context |
+| Phase 1 Plan | .ai-factory/features/feature-phase-1-foundation.md | All 16 tasks (complete) |
 
 ## Implementation Phases
-1. **Foundation** — design system, auth, @me profile, Google Calendar OAuth
-2. **Goal Management** — goal-generator agent, spheres/goals/quests/tasks CRUD
-3. **Daily Execution** — daily-planner, task execution, XP, level-up, fatigue panel
-4. **Adaptation** — skip detection, task-redistributor, goal failure
-5. **Retrospectives** — retrospective-analyzer, wizard UI
-6. **Knowledge Base** — Storage, markdown, three-panel UI, RAG
-7. **Polish** — skill tree, animations, PWA, Telegram
+1. **Foundation** ✅ — design system, auth, @me profile, Google Calendar OAuth, tests
+2. **Goal Management** — goal-generator agent (Vercel AI SDK), spheres/goals/quests/tasks CRUD
+3. **Daily Execution** — daily-planner agent, task execution, XP, level-up, fatigue panel
+4. **Adaptation** — skip detection, task-redistributor, goal failure logic
+5. **Retrospectives** — retrospective-analyzer, wizard UI, patterns
+6. **Knowledge Base** — markdown autosave, three-panel UI, RAG, embedding queue worker
+7. **Polish** — skill tree, level-up modal, PWA Web Push notifications
