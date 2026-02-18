@@ -1,7 +1,13 @@
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase/server'
+import { getGoalsByUser } from '@/lib/supabase/goals'
+import { getTasksByDate } from '@/lib/supabase/tasks'
+import { createLogger } from '@/lib/logger'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 
+const logger = createLogger('dashboard/page')
+
 const comingFeatures = [
-  { phase: 2, label: 'Goal Management', desc: 'Spheres, goals, quests, task generation' },
   { phase: 3, label: 'Daily Execution', desc: 'Task execution, XP, level-up, fatigue' },
   { phase: 4, label: 'Adaptation', desc: 'Skip detection, task redistribution' },
   { phase: 5, label: 'Retrospectives', desc: 'Weekly analysis, pattern detection' },
@@ -9,7 +15,24 @@ const comingFeatures = [
   { phase: 7, label: 'Polish', desc: 'Skill tree, PWA, notifications' },
 ]
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) redirect('/login')
+
+  const today = new Date().toISOString().slice(0, 10)
+
+  const [activeGoals, todayTasks] = await Promise.all([
+    getGoalsByUser(supabase, user.id, 'active'),
+    getTasksByDate(supabase, user.id, today),
+  ])
+
+  const scheduledToday = todayTasks.filter(t => t.status === 'scheduled')
+  const nextTask = scheduledToday[0]
+
+  logger.debug('dashboard loaded', { userId: user.id, activeGoalCount: activeGoals.length, todayTaskCount: scheduledToday.length })
+
   return (
     <div style={{ padding: '2rem', maxWidth: '800px' }}>
       <h1
@@ -36,28 +59,44 @@ export default function DashboardPage() {
           marginBottom: '2.5rem',
         }}
       >
-        Phase 1 Foundation — Complete
+        Phase 2 — Goal Management
       </p>
 
+      {/* Active goals stat card */}
       <Card style={{ marginBottom: '2rem' }}>
         <CardHeader>
-          <CardTitle>Phase 2: Daily Execution</CardTitle>
+          <CardTitle>Active Goals</CardTitle>
         </CardHeader>
         <CardContent>
-          <p
-            style={{
-              fontFamily: 'Cormorant, serif',
-              color: 'rgba(255, 255, 255, 0.6)',
-              fontSize: '1rem',
-              lineHeight: 1.7,
-            }}
-          >
-            Goal management and daily task execution are coming in Phase 2.
-            Your profile, calendar, and account are ready.
-          </p>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <span style={{ fontFamily: 'Orbitron, monospace', fontSize: '2.5rem', color: '#ffffff' }}>
+              {activeGoals.length}
+            </span>
+            <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '1rem', color: 'rgba(255,255,255,0.4)' }}>
+              goal{activeGoals.length !== 1 ? 's' : ''} in progress
+            </span>
+          </div>
+          {nextTask ? (
+            <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: 'rgba(255,255,255,0.6)', margin: 0 }}>
+              Next task today:{' '}
+              <span style={{ color: '#ffffff' }}>{nextTask.title}</span>
+              <span style={{ color: 'rgba(255,255,255,0.3)', marginLeft: '0.5rem' }}>
+                +{nextTask.xp_reward} XP
+              </span>
+            </p>
+          ) : activeGoals.length > 0 ? (
+            <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: 'rgba(255,255,255,0.4)', margin: 0, fontStyle: 'italic' }}>
+              No tasks scheduled for today.
+            </p>
+          ) : (
+            <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: 'rgba(255,255,255,0.4)', margin: 0, fontStyle: 'italic' }}>
+              No active goals. Visit Spheres to create your first 90-day goal.
+            </p>
+          )}
         </CardContent>
       </Card>
 
+      {/* Coming phases */}
       <div
         style={{
           display: 'grid',
