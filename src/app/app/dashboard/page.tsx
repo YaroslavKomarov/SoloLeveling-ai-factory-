@@ -34,7 +34,7 @@ export default async function DashboardPage() {
   logger.debug('dashboard loaded', { userId: user.id, activeGoalCount: activeGoals.length, todayTaskCount: scheduledToday.length })
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '800px' }}>
+    <div style={{ padding: '2rem' }}>
       <h1
         style={{
           fontFamily: 'Cinzel, serif',

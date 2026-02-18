@@ -68,7 +68,7 @@ export function GoalDetailClient({ goal, quests, upcomingTasks, sphereName }: Go
   }
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '800px' }}>
+    <div style={{ padding: '2rem' }}>
       {/* Breadcrumb + back */}
       <button
         onClick={() => router.push('/app/goals')}

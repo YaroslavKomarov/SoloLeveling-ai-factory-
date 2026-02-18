@@ -46,12 +46,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       />
       <main
         style={{
-          paddingTop: 'var(--header-height)',
-          paddingRight: '220px',
+          paddingTop: 'calc(var(--header-height) + var(--user-panel-height))',
           minHeight: '100vh',
         }}
       >
-        <PageTransition>{children}</PageTransition>
+        <div
+          style={{
+            width: '65%',
+            margin: '0 auto',
+          }}
+        >
+          <PageTransition>{children}</PageTransition>
+        </div>
       </main>
     </>
   )

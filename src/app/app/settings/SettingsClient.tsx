@@ -115,7 +115,7 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
   }
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '640px' }}>
+    <div style={{ padding: '2rem' }}>
       <h1
         style={{
           fontFamily: 'Cinzel, serif', fontSize: '2rem', fontWeight: 400,
