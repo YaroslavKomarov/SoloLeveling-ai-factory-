@@ -51,7 +51,7 @@ Design rules (never break these):
 
 ### Phase A: Database & Types
 
-- [ ] **Task 1: Database migration 002 — goals schema**
+- [x] **Task 1: Database migration 002 — goals schema**
 
   Create `supabase/migrations/002_goals_schema.sql` with all Phase 2 tables.
 
@@ -168,7 +168,7 @@ Design rules (never break these):
 
   Files: `supabase/migrations/002_goals_schema.sql`
 
-- [ ] **Task 2: TypeScript types for Phase 2 entities**
+- [x] **Task 2: TypeScript types for Phase 2 entities**
 
   Extend `src/lib/supabase/types.ts` with all new entities. Follow the exact same pattern as existing types (Row/Insert/Update variants, Database type union).
 
@@ -221,7 +221,7 @@ Design rules (never break these):
 
   Files: `src/lib/supabase/types.ts`
 
-- [ ] **Task 3: Supabase data access helpers for goals**
+- [x] **Task 3: Supabase data access helpers for goals**
 
   Create three helper files following the pattern in `src/lib/supabase/notes.ts`:
   - `createLogger(module)` at the top
@@ -275,7 +275,7 @@ Design rules (never break these):
 
 ### Phase B: Core Logic — Spaced Repetition & Agent
 
-- [ ] **Task 4: Spaced repetition engine + 90-day task plan generator**
+- [x] **Task 4: Spaced repetition engine + 90-day task plan generator**
 
   Create `src/lib/tasks/spaced-repetition.ts` with the Ebbinghaus interval scheduler and full 90-day plan generation.
 
@@ -329,7 +329,7 @@ Design rules (never break these):
 
   Files: `src/lib/tasks/spaced-repetition.ts`
 
-- [ ] **Task 5: Goal-generator agent — prompt, tools, context, API route**
+- [x] **Task 5: Goal-generator agent — prompt, tools, context, API route**
 
   Build the full goal-generator agent pipeline. This is the core of Phase 2.
 
@@ -453,7 +453,7 @@ Design rules (never break these):
 
 ### Phase C: State Management & UI Components
 
-- [ ] **Task 6: Zustand stores for goal management**
+- [x] **Task 6: Zustand stores for goal management**
 
   Create two new stores following the pattern in `src/store/user.ts`.
 
@@ -509,7 +509,7 @@ Design rules (never break these):
 
   Files: `src/store/goals.ts`, `src/store/goal-dialog.ts`
 
-- [ ] **Task 7: Sphere & goal UI components**
+- [x] **Task 7: Sphere & goal UI components**
 
   Create display and CRUD components. Follow design system strictly (Cinzel headings, Cormorant body, white-only, no emojis, Lucide icons).
 
@@ -556,7 +556,7 @@ Design rules (never break these):
   - `src/components/goals/QuestEditor.tsx`
   - `src/components/goals/index.ts`
 
-- [ ] **Task 8: Goal creation dialog — streaming AI chat + plan preview**
+- [x] **Task 8: Goal creation dialog — streaming AI chat + plan preview**
 
   This is the main user-facing feature. A full-screen modal that drives the multi-phase goal creation flow.
 
@@ -609,7 +609,7 @@ Design rules (never break these):
 
 ### Phase D: Pages & Navigation
 
-- [ ] **Task 9: Goals overview page**
+- [x] **Task 9: Goals overview page**
 
   Replace the goals placeholder with a real page.
 
@@ -638,7 +638,7 @@ Design rules (never break these):
   - `src/app/(app)/goals/page.tsx`
   - `src/app/(app)/goals/GoalsClient.tsx`
 
-- [ ] **Task 10: Goal detail page**
+- [x] **Task 10: Goal detail page**
 
   **`src/app/(app)/goals/[goalId]/page.tsx`** (Server Component):
   - Fetch goal + quests + recent tasks server-side
@@ -666,7 +666,7 @@ Design rules (never break these):
   - `src/app/(app)/goals/[goalId]/page.tsx`
   - `src/app/(app)/goals/[goalId]/GoalDetailClient.tsx`
 
-- [ ] **Task 11: Navigation + Dashboard update**
+- [x] **Task 11: Navigation + Dashboard update**
 
   Update Phase 1 components to integrate Goal Management.
 
@@ -694,7 +694,7 @@ Design rules (never break these):
 
 ### Phase E: Tests
 
-- [ ] **Task 12: Tests — data layer (spheres, goals, quests CRUD)**
+- [x] **Task 12: Tests — data layer (spheres, goals, quests CRUD)**
 
   Create `src/test/goals/` test directory.
 
@@ -720,7 +720,7 @@ Design rules (never break these):
 
   Files: `src/test/goals/spheres.test.ts`, `src/test/goals/goals.test.ts`, `src/test/goals/dialog.test.ts`
 
-- [ ] **Task 13: Tests — spaced repetition & plan generation**
+- [x] **Task 13: Tests — spaced repetition & plan generation**
 
   **`src/test/tasks/spaced-repetition.test.ts`:**
 
@@ -744,7 +744,7 @@ Design rules (never break these):
 
   Files: `src/test/tasks/spaced-repetition.test.ts`
 
-- [ ] **Task 14: Tests — goal-generator agent tools**
+- [x] **Task 14: Tests — goal-generator agent tools**
 
   **`src/test/agents/goal-generator.test.ts`:**
 
