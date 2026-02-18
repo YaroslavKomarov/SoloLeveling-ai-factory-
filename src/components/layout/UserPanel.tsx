@@ -67,14 +67,14 @@ export function UserPanel({
     <aside
       style={{
         position: 'fixed',
-        top: 'calc(var(--header-height) + 8px)',
+        top: 'calc(var(--header-height) + 20px)',
         left: '50%',
         transform: 'translateX(-50%)',
-        width: '60%',
+        width: '65%',
         height: 'var(--user-panel-height)',
         backgroundColor: 'rgba(15, 20, 25, 0.92)',
         border: '1px solid rgba(255, 255, 255, 0.12)',
-        boxShadow: '0 4px 24px rgba(0, 0, 0, 0.7), 0 0 12px rgba(255, 255, 255, 0.06), inset 0 0 8px rgba(255, 255, 255, 0.03)',
+        boxShadow: '0 4px 32px rgba(0, 0, 0, 0.8), 0 0 20px rgba(255, 255, 255, 0.08), 0 0 40px rgba(255, 255, 255, 0.03), inset 0 0 12px rgba(255, 255, 255, 0.04)',
         zIndex: 15,
         display: 'flex',
         flexDirection: 'row',
@@ -83,12 +83,12 @@ export function UserPanel({
       }}
     >
       {/* Panel corner brackets */}
-      <CornerBrackets size={14} color="rgba(255, 255, 255, 0.45)" />
+      <CornerBrackets size={16} color="rgba(255, 255, 255, 0.45)" />
 
       {/* Left: Level avatar square — spans full panel height */}
       <div
         style={{
-          width: '72px',
+          width: '90px',
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
@@ -99,22 +99,22 @@ export function UserPanel({
         <div
           style={{
             position: 'relative',
-            width: '52px',
-            height: '52px',
+            width: '66px',
+            height: '66px',
             border: '1px solid rgba(255, 255, 255, 0.2)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <CornerBrackets size={9} color="rgba(255, 255, 255, 0.55)" />
+          <CornerBrackets size={11} color="rgba(255, 255, 255, 0.55)" />
           <span
             style={{
               fontFamily: 'Cinzel, serif',
-              fontSize: '1.25rem',
+              fontSize: '1.625rem',
               fontWeight: 500,
               color: '#ffffff',
-              textShadow: '0 0 10px rgba(255, 255, 255, 0.4)',
+              textShadow: '0 0 12px rgba(255, 255, 255, 0.4)',
               letterSpacing: 0,
             }}
           >
@@ -130,18 +130,18 @@ export function UserPanel({
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
-          gap: '0.5rem',
-          padding: '0.625rem 1.25rem',
+          gap: '0.625rem',
+          padding: '0.875rem 1.5rem',
           minWidth: 0,
         }}
       >
         {/* Row 1: Level text + XP bar + XP numbers */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
             <span
               style={{
                 fontFamily: 'Cinzel, serif',
-                fontSize: '0.5rem',
+                fontSize: '0.5625rem',
                 letterSpacing: '0.15em',
                 textTransform: 'uppercase',
                 color: 'rgba(255, 255, 255, 0.4)',
@@ -149,11 +149,11 @@ export function UserPanel({
             >
               Level
             </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
               <span
                 style={{
                   fontFamily: 'Cinzel, serif',
-                  fontSize: '0.875rem',
+                  fontSize: '1rem',
                   fontWeight: 400,
                   letterSpacing: '0.05em',
                   color: '#ffffff',
@@ -163,19 +163,19 @@ export function UserPanel({
                 Level {level}
               </span>
               {anyFatigueHigh && (
-                <AlertTriangle size={11} strokeWidth={1.5} style={{ color: '#ec4899', flexShrink: 0 }} />
+                <AlertTriangle size={13} strokeWidth={1.5} style={{ color: '#ec4899', flexShrink: 0 }} />
               )}
             </div>
           </div>
 
           <div style={{ flex: 1 }}>
-            <Progress value={xp} max={xpToNext} color="white" height="0.1875rem" />
+            <Progress value={xp} max={xpToNext} color="white" height="0.25rem" />
           </div>
 
           <span
             style={{
               fontFamily: 'Orbitron, monospace',
-              fontSize: '0.5625rem',
+              fontSize: '0.6875rem',
               color: 'rgba(255, 255, 255, 0.45)',
               flexShrink: 0,
               letterSpacing: '0.03em',
@@ -186,21 +186,21 @@ export function UserPanel({
         </div>
 
         {/* Row 2: Fatigue bars */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
           <HorizontalFatigueBar
-            icon={<Dumbbell size={11} strokeWidth={1.5} />}
+            icon={<Dumbbell size={13} strokeWidth={1.5} />}
             label="Physical"
             value={fatigue.physical}
             color="physical"
           />
           <HorizontalFatigueBar
-            icon={<Heart size={11} strokeWidth={1.5} />}
+            icon={<Heart size={13} strokeWidth={1.5} />}
             label="Emotional"
             value={fatigue.emotional}
             color="emotional"
           />
           <HorizontalFatigueBar
-            icon={<Cpu size={11} strokeWidth={1.5} />}
+            icon={<Cpu size={13} strokeWidth={1.5} />}
             label="Intellectual"
             value={fatigue.intellectual}
             color="intellectual"
@@ -212,23 +212,23 @@ export function UserPanel({
       <Link
         href="/app/settings"
         style={{
-          width: '72px',
+          width: '90px',
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '0.3rem',
+          gap: '0.4rem',
           borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
           color: 'rgba(255, 255, 255, 0.4)',
           textDecoration: 'none',
           transition: 'color 0.2s ease',
         }}
       >
-        <Settings size={14} strokeWidth={1.5} />
+        <Settings size={18} strokeWidth={1.5} />
         <span
           style={{
-            fontSize: '0.5625rem',
+            fontSize: '0.625rem',
             fontFamily: 'Cinzel, serif',
             letterSpacing: '0.12em',
             textTransform: 'uppercase',
@@ -260,13 +260,13 @@ function HorizontalFatigueBar({
   const textColor = colorMap[color]
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.2rem', minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
         <span style={{ color: textColor, display: 'flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
         <span
           style={{
             flex: 1,
-            fontSize: '0.5rem',
+            fontSize: '0.5625rem',
             fontFamily: 'Cinzel, serif',
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
@@ -280,7 +280,7 @@ function HorizontalFatigueBar({
         </span>
         <span
           style={{
-            fontSize: '0.5rem',
+            fontSize: '0.5625rem',
             fontFamily: 'Orbitron, monospace',
             color: value >= 91 ? textColor : 'rgba(255, 255, 255, 0.4)',
             flexShrink: 0,
@@ -289,7 +289,7 @@ function HorizontalFatigueBar({
           {value}%
         </span>
       </div>
-      <Progress value={value} max={100} color={color} height="0.125rem" />
+      <Progress value={value} max={100} color={color} height="0.1875rem" />
     </div>
   )
 }
