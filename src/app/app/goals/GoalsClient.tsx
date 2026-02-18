@@ -77,7 +77,7 @@ export function GoalsClient({ userId, initialSpheres, initialGoals, initialQuest
               margin: 0,
             }}
           >
-            Spheres
+            Skills Tree
           </h1>
           <p
             style={{

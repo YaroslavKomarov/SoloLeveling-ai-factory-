@@ -46,7 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       />
       <main
         style={{
-          paddingTop: 'calc(var(--header-height) + var(--user-panel-height))',
+          paddingTop: 'calc(var(--header-height) + var(--user-panel-height) + 8px)',
           minHeight: '100vh',
         }}
       >

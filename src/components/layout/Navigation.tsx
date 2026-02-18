@@ -8,7 +8,7 @@ const logger = createLogger('Navigation')
 
 const navItems = [
   { href: '/app/dashboard', label: 'Dashboard' },
-  { href: '/app/goals', label: 'Goals' },
+  { href: '/app/goals', label: 'Skills Tree' },
   { href: '/app/knowledge', label: 'Knowledge' },
   { href: '/app/settings', label: 'Settings' },
 ]

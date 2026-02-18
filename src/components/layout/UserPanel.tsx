@@ -67,149 +67,176 @@ export function UserPanel({
     <aside
       style={{
         position: 'fixed',
-        top: 'var(--header-height)',
+        top: 'calc(var(--header-height) + 8px)',
         left: '50%',
         transform: 'translateX(-50%)',
-        width: '65%',
+        width: '60%',
         height: 'var(--user-panel-height)',
-        padding: '0.625rem 1.25rem',
         backgroundColor: 'rgba(15, 20, 25, 0.92)',
         border: '1px solid rgba(255, 255, 255, 0.12)',
         boxShadow: '0 4px 24px rgba(0, 0, 0, 0.7), 0 0 12px rgba(255, 255, 255, 0.06), inset 0 0 8px rgba(255, 255, 255, 0.03)',
         zIndex: 15,
         display: 'flex',
-        flexDirection: 'column',
-        gap: '0.5rem',
+        flexDirection: 'row',
+        alignItems: 'stretch',
         backdropFilter: 'blur(6px)',
       }}
     >
       {/* Panel corner brackets */}
       <CornerBrackets size={14} color="rgba(255, 255, 255, 0.45)" />
 
-      {/* Row 1: Level avatar + level text + XP bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-
-        {/* Level avatar square */}
+      {/* Left: Level avatar square — spans full panel height */}
+      <div
+        style={{
+          width: '72px',
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRight: '1px solid rgba(255, 255, 255, 0.08)',
+        }}
+      >
         <div
           style={{
             position: 'relative',
-            width: '36px',
-            height: '36px',
-            border: '1px solid rgba(255, 255, 255, 0.18)',
+            width: '52px',
+            height: '52px',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            flexShrink: 0,
           }}
         >
-          <CornerBrackets size={7} color="rgba(255, 255, 255, 0.55)" />
+          <CornerBrackets size={9} color="rgba(255, 255, 255, 0.55)" />
           <span
             style={{
               fontFamily: 'Cinzel, serif',
-              fontSize: '1rem',
+              fontSize: '1.25rem',
               fontWeight: 500,
               color: '#ffffff',
-              textShadow: '0 0 8px rgba(255, 255, 255, 0.4)',
+              textShadow: '0 0 10px rgba(255, 255, 255, 0.4)',
               letterSpacing: 0,
             }}
           >
             {level}
           </span>
         </div>
+      </div>
 
-        {/* Level label + XP text */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem', flexShrink: 0 }}>
-          <span
-            style={{
-              fontFamily: 'Cinzel, serif',
-              fontSize: '0.5rem',
-              letterSpacing: '0.15em',
-              textTransform: 'uppercase',
-              color: 'rgba(255, 255, 255, 0.4)',
-            }}
-          >
-            Level
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+      {/* Middle: Two rows — XP bar + fatigue bars */}
+      <div
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          gap: '0.5rem',
+          padding: '0.625rem 1.25rem',
+          minWidth: 0,
+        }}
+      >
+        {/* Row 1: Level text + XP bar + XP numbers */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
             <span
               style={{
                 fontFamily: 'Cinzel, serif',
-                fontSize: '0.875rem',
-                fontWeight: 400,
-                letterSpacing: '0.05em',
-                color: '#ffffff',
-                textShadow: '0 0 6px rgba(255, 255, 255, 0.25)',
+                fontSize: '0.5rem',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                color: 'rgba(255, 255, 255, 0.4)',
               }}
             >
-              Level {level}
+              Level
             </span>
-            {anyFatigueHigh && (
-              <AlertTriangle size={11} strokeWidth={1.5} style={{ color: '#ec4899', flexShrink: 0 }} />
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              <span
+                style={{
+                  fontFamily: 'Cinzel, serif',
+                  fontSize: '0.875rem',
+                  fontWeight: 400,
+                  letterSpacing: '0.05em',
+                  color: '#ffffff',
+                  textShadow: '0 0 6px rgba(255, 255, 255, 0.25)',
+                }}
+              >
+                Level {level}
+              </span>
+              {anyFatigueHigh && (
+                <AlertTriangle size={11} strokeWidth={1.5} style={{ color: '#ec4899', flexShrink: 0 }} />
+              )}
+            </div>
           </div>
+
+          <div style={{ flex: 1 }}>
+            <Progress value={xp} max={xpToNext} color="white" height="0.1875rem" />
+          </div>
+
+          <span
+            style={{
+              fontFamily: 'Orbitron, monospace',
+              fontSize: '0.5625rem',
+              color: 'rgba(255, 255, 255, 0.45)',
+              flexShrink: 0,
+              letterSpacing: '0.03em',
+            }}
+          >
+            {xp} / {xpToNext}
+          </span>
         </div>
 
-        {/* XP progress bar — fills remaining space */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-          <Progress value={xp} max={xpToNext} color="white" height="0.1875rem" />
+        {/* Row 2: Fatigue bars */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <HorizontalFatigueBar
+            icon={<Dumbbell size={11} strokeWidth={1.5} />}
+            label="Physical"
+            value={fatigue.physical}
+            color="physical"
+          />
+          <HorizontalFatigueBar
+            icon={<Heart size={11} strokeWidth={1.5} />}
+            label="Emotional"
+            value={fatigue.emotional}
+            color="emotional"
+          />
+          <HorizontalFatigueBar
+            icon={<Cpu size={11} strokeWidth={1.5} />}
+            label="Intellectual"
+            value={fatigue.intellectual}
+            color="intellectual"
+          />
         </div>
-
-        {/* XP numbers */}
-        <span
-          style={{
-            fontFamily: 'Orbitron, monospace',
-            fontSize: '0.5625rem',
-            color: 'rgba(255, 255, 255, 0.45)',
-            flexShrink: 0,
-            letterSpacing: '0.03em',
-          }}
-        >
-          {xp} / {xpToNext}
-        </span>
       </div>
 
-      {/* Row 2: Fatigue bars + Settings */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-        <HorizontalFatigueBar
-          icon={<Dumbbell size={11} strokeWidth={1.5} />}
-          label="Physical"
-          value={fatigue.physical}
-          color="physical"
-        />
-        <HorizontalFatigueBar
-          icon={<Heart size={11} strokeWidth={1.5} />}
-          label="Emotional"
-          value={fatigue.emotional}
-          color="emotional"
-        />
-        <HorizontalFatigueBar
-          icon={<Cpu size={11} strokeWidth={1.5} />}
-          label="Intellectual"
-          value={fatigue.intellectual}
-          color="intellectual"
-        />
-
-        {/* Settings link */}
-        <Link
-          href="/app/settings"
+      {/* Right: Settings — spans full panel height */}
+      <Link
+        href="/app/settings"
+        style={{
+          width: '72px',
+          flexShrink: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '0.3rem',
+          borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
+          color: 'rgba(255, 255, 255, 0.4)',
+          textDecoration: 'none',
+          transition: 'color 0.2s ease',
+        }}
+      >
+        <Settings size={14} strokeWidth={1.5} />
+        <span
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.3rem',
-            color: 'rgba(255, 255, 255, 0.35)',
-            textDecoration: 'none',
-            fontSize: '0.5rem',
+            fontSize: '0.5625rem',
             fontFamily: 'Cinzel, serif',
             letterSpacing: '0.12em',
             textTransform: 'uppercase',
-            flexShrink: 0,
-            transition: 'color 0.2s ease',
           }}
         >
-          <Settings size={11} strokeWidth={1.5} />
           Settings
-        </Link>
-      </div>
+        </span>
+      </Link>
     </aside>
   )
 }
