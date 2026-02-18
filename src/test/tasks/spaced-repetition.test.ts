@@ -106,8 +106,8 @@ describe('generateGoalPlan', () => {
       startDate: START,
       quests: baseQuests,
       tasksPerQuest: [
-        { regular: 1, strategic: 5 },
-        { regular: 1, strategic: 4 },
+        { regular: 0, strategic: 5 },
+        { regular: 0, strategic: 4 },
       ],
       existingDailyFatigue: [],
     })
