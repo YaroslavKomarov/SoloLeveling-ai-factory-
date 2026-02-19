@@ -38,15 +38,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <>
       <Navigation />
-      <UserPanel
-        level={level}
-        xp={xp}
-        xpToNext={xpToNext}
-        fatigue={{ physical: 0, emotional: 0, intellectual: 0 }}
-      />
       <main
         style={{
-          paddingTop: 'calc(var(--header-height) + var(--user-panel-height) + 20px)',
+          paddingTop: 'var(--header-height)',
           minHeight: '100vh',
         }}
       >
@@ -56,6 +50,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             margin: '0 auto',
           }}
         >
+          <UserPanel
+            level={level}
+            xp={xp}
+            xpToNext={xpToNext}
+            fatigue={{ physical: 0, emotional: 0, intellectual: 0 }}
+          />
           <PageTransition>{children}</PageTransition>
         </div>
       </main>

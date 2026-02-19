@@ -66,16 +66,12 @@ export function UserPanel({
   return (
     <aside
       style={{
-        position: 'fixed',
-        top: 'calc(var(--header-height) + 20px)',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: '65%',
+        width: '100%',
+        marginTop: '20px',
         height: 'var(--user-panel-height)',
         backgroundColor: 'rgba(15, 20, 25, 0.92)',
         border: '1px solid rgba(255, 255, 255, 0.12)',
         boxShadow: '0 4px 32px rgba(0, 0, 0, 0.8), 0 0 20px rgba(255, 255, 255, 0.08), 0 0 40px rgba(255, 255, 255, 0.03), inset 0 0 12px rgba(255, 255, 255, 0.04)',
-        zIndex: 15,
         display: 'flex',
         flexDirection: 'row',
         alignItems: 'stretch',

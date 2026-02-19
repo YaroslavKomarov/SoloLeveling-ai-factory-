@@ -54,7 +54,7 @@ export function GoalsClient({ userId, initialSpheres, initialGoals, initialQuest
   }
 
   return (
-    <div style={{ padding: '2rem' }}>
+    <div style={{ padding: '2rem 0' }}>
       {/* Header */}
       <div
         style={{
