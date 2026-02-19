@@ -35,6 +35,12 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Claude Code configuration (not project code)
+.claude/
+
+# Temporary AI factory planning files
+.ai-factory/PLAN.md
+
 # Vercel
 .vercel
 
