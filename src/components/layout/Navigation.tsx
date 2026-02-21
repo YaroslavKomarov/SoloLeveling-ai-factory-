@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { motion } from 'framer-motion'
 import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('Navigation')
@@ -92,9 +93,28 @@ export function Navigation() {
                 backgroundColor: isActive ? 'rgba(255, 255, 255, 0.05)' : 'transparent',
                 textShadow: isActive ? '0 0 6px rgba(255, 255, 255, 0.3)' : 'none',
                 transition: 'color 0.2s ease, background-color 0.2s ease',
+                position: 'relative',
+                overflow: 'hidden',
               }}
             >
               {item.label}
+              {/* Hover underline — only show on non-active links */}
+              {!isActive && (
+                <motion.span
+                  style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: '20%',
+                    right: '20%',
+                    height: '1px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+                    scaleX: 0,
+                    originX: 0,
+                  }}
+                  whileHover={{ scaleX: 1 }}
+                  transition={{ duration: 0.2 }}
+                />
+              )}
             </Link>
           )
         })}

@@ -27,6 +27,16 @@ const orbitron = Orbitron({
 export const metadata: Metadata = {
   title: 'Solo Leveling',
   description: 'ASE v3.0 — Adaptive Strategic Execution',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'SoloLeveling',
+  },
+  icons: {
+    icon: '/icon-192.png',
+    apple: '/icon-192.png',
+  },
 }
 
 export default function RootLayout({
@@ -39,6 +49,12 @@ export default function RootLayout({
       lang="en"
       className={`${cinzel.variable} ${cormorant.variable} ${orbitron.variable}`}
     >
+      <head>
+        <meta name="theme-color" content="#0a0c10" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+      </head>
       <body
         style={{
           backgroundColor: '#0a0c10',

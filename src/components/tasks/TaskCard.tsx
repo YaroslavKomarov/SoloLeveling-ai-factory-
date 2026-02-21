@@ -2,10 +2,12 @@
 
 import { useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
+import { motion } from 'framer-motion'
 import type { TaskRow } from '@/lib/supabase/types'
 import { useTasksStore } from '@/store/tasks'
 import { useUserStore } from '@/store/user'
 import { StrategicExecutionDialog } from '@/components/tasks/StrategicExecutionDialog'
+import { fadeInUp, tapScale, cardHover } from '@/lib/animations/variants'
 import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('TaskCard')
@@ -144,7 +146,9 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
 
   return (
     <>
-      <div
+      <motion.div
+        variants={fadeInUp}
+        whileHover={isFinished ? undefined : cardHover}
         style={{
           position: 'relative',
           backgroundColor: 'rgba(15, 20, 25, 0.85)',
@@ -265,9 +269,10 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
         {/* Action buttons */}
         {!isFinished && (
           <div style={{ display: 'flex', gap: '0.625rem' }}>
-            <button
+            <motion.button
               onClick={onCompleteClick}
               disabled={isLoading}
+              whileTap={isLoading ? undefined : tapScale}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -293,11 +298,12 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
                 />
               )}
               Complete
-            </button>
+            </motion.button>
 
-            <button
+            <motion.button
               onClick={handleSkip}
               disabled={isLoading}
+              whileTap={isLoading ? undefined : tapScale}
               style={{
                 padding: '0.5rem 1rem',
                 backgroundColor: 'transparent',
@@ -313,10 +319,10 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
               }}
             >
               Skip
-            </button>
+            </motion.button>
           </div>
         )}
-      </div>
+      </motion.div>
 
       {/* Strategic execution dialog */}
       {isDialogOpen && (
