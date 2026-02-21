@@ -34,6 +34,7 @@ interface NightlyResult {
   goalsFailed: number
   tasksRescheduled: number
   goalsAtRisk: number
+  retrospectivesCreated: number
   durationMs: number
 }
 
@@ -217,6 +218,7 @@ Deno.serve(async (req: Request) => {
       goalsFailed: 0,
       tasksRescheduled: 0,
       goalsAtRisk: 0,
+      retrospectivesCreated: 0,
       durationMs: 0,
     }
 
@@ -237,6 +239,55 @@ Deno.serve(async (req: Request) => {
           warn(`Fatigue reset failed for user ${userId}`, { error: fatigueError.message })
         } else {
           log(`Fatigue reset for user ${userId} on ${today}`)
+        }
+
+        // Step 1.5: Monday check → create retrospective for last week
+        const todayDate = new Date(today + 'T00:00:00Z')
+        const isMonday = todayDate.getUTCDay() === 1
+
+        log(`Monday check for user ${userId}`, { today, isMonday })
+
+        if (isMonday) {
+          // week_start = last Monday (7 days ago), week_end = last Sunday (yesterday)
+          const weekEnd = yesterday
+          const weekStartDate = new Date(Date.now() - 7 * 86400000)
+          const weekStart = weekStartDate.toISOString().slice(0, 10)
+
+          const { error: retroError } = await supabase
+            .from('retrospectives')
+            .upsert(
+              { user_id: userId, week_start: weekStart, week_end: weekEnd, status: 'pending' },
+              { onConflict: 'user_id,week_start' }
+            )
+
+          if (retroError) {
+            warn(`Retrospective creation failed for user ${userId}`, { error: retroError.message })
+          } else {
+            log(`Retrospective created for user ${userId}`, { weekStart, weekEnd })
+            result.retrospectivesCreated++
+          }
+
+          // Send push notification about retrospective
+          const appUrl = Deno.env.get('NEXT_PUBLIC_APP_URL')
+          const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+
+          if (appUrl && serviceRoleKey) {
+            try {
+              await fetch(`${appUrl}/api/notifications/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+                body: JSON.stringify({
+                  userId,
+                  title: 'WEEKLY RETROSPECTIVE',
+                  body: 'Your weekly retrospective is ready. Analyze your performance.',
+                  url: '/app/dashboard',
+                }),
+              })
+              log(`Retrospective push notification sent to user ${userId}`)
+            } catch (e) {
+              warn(`Retrospective push notification failed for user ${userId}`, { error: String(e) })
+            }
+          }
         }
 
         // Step 2: Detect missed tasks from yesterday
@@ -496,7 +547,7 @@ Deno.serve(async (req: Request) => {
     result.durationMs = Date.now() - runStart
 
     log(
-      `Complete. Users=${result.usersProcessed}, Tasks=${result.tasksPlanned}, GoalsFailed=${result.goalsFailed}, Rescheduled=${result.tasksRescheduled}, AtRisk=${result.goalsAtRisk}, Duration=${result.durationMs}ms`
+      `Complete. Users=${result.usersProcessed}, Tasks=${result.tasksPlanned}, GoalsFailed=${result.goalsFailed}, Rescheduled=${result.tasksRescheduled}, AtRisk=${result.goalsAtRisk}, Retrospectives=${result.retrospectivesCreated}, Duration=${result.durationMs}ms`
     )
 
     return new Response(JSON.stringify(result), {
