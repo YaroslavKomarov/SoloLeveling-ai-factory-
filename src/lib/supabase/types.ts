@@ -280,6 +280,65 @@ export interface DayFatigueProjection {
   taskCount: number
 }
 
+// =============================================================
+// Phase 5: Retrospectives types
+// =============================================================
+
+export interface RetrospectiveRow {
+  id: string
+  user_id: string
+  week_start: string  // 'YYYY-MM-DD'
+  week_end: string
+  status: 'pending' | 'in_progress' | 'completed'
+  agent_summary: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type RetrospectiveInsert = Omit<RetrospectiveRow, 'id' | 'created_at' | 'updated_at'> & {
+  status?: 'pending' | 'in_progress' | 'completed'
+  agent_summary?: string | null
+}
+
+export type RetrospectiveUpdate = Partial<Omit<RetrospectiveRow, 'id' | 'user_id' | 'created_at'>>
+
+export interface RetrospectiveFeedbackRow {
+  id: string
+  retrospective_id: string
+  goal_id: string
+  load_comfort: 'too_light' | 'ok' | 'too_heavy'
+  text_feedback: string
+  created_at: string
+  updated_at: string
+}
+
+export type RetrospectiveFeedbackInsert = Omit<RetrospectiveFeedbackRow, 'id' | 'created_at' | 'updated_at'> & {
+  load_comfort?: 'too_light' | 'ok' | 'too_heavy'
+  text_feedback?: string
+}
+
+export interface RetrospectiveAdjustmentRow {
+  id: string
+  retrospective_id: string
+  type: 'task_content' | 'fatigue_cost' | 'task_removal'
+  payload: Record<string, unknown>
+  approved: boolean | null
+  created_at: string
+}
+
+export type RetrospectiveAdjustmentInsert = Omit<RetrospectiveAdjustmentRow, 'id' | 'created_at'>
+
+export interface BehaviorPatternRow {
+  id: string
+  user_id: string
+  pattern_key: string
+  pattern_value: Record<string, unknown>
+  detected_at: string
+  last_updated: string
+}
+
+export type BehaviorPatternUpsert = Omit<BehaviorPatternRow, 'id' | 'detected_at'>
+
 export interface Database {
   public: {
     Tables: {
@@ -332,6 +391,26 @@ export interface Database {
         Row: GoalDialogMessageRow
         Insert: GoalDialogMessageInsert
         Update: Partial<Omit<GoalDialogMessageRow, 'id' | 'created_at'>>
+      }
+      retrospectives: {
+        Row: RetrospectiveRow
+        Insert: RetrospectiveInsert
+        Update: RetrospectiveUpdate
+      }
+      retrospective_feedback: {
+        Row: RetrospectiveFeedbackRow
+        Insert: RetrospectiveFeedbackInsert
+        Update: Partial<Omit<RetrospectiveFeedbackRow, 'id' | 'retrospective_id' | 'goal_id' | 'created_at'>>
+      }
+      retrospective_adjustments: {
+        Row: RetrospectiveAdjustmentRow
+        Insert: RetrospectiveAdjustmentInsert
+        Update: Partial<Pick<RetrospectiveAdjustmentRow, 'approved'>>
+      }
+      behavior_patterns: {
+        Row: BehaviorPatternRow
+        Insert: BehaviorPatternUpsert
+        Update: Partial<Omit<BehaviorPatternRow, 'id' | 'user_id' | 'detected_at'>>
       }
     }
     Functions: Record<string, never>
