@@ -22,7 +22,11 @@ export const readyToGenerateQuests = tool({
   description:
     'Call this when you have gathered enough information about the user\'s goal to determine its type and generate key results. ' +
     'This signals the transition from the gathering phase to quest generation.',
-  parameters: z.object({
+  // [FIX] AI SDK v6 uses `inputSchema`, not `parameters`. Using `parameters` caused
+  // tool.inputSchema to be undefined → asSchema(undefined) returned an empty schema
+  // with additionalProperties:false → all model inputs failed Zod validation →
+  // tool calls were always marked invalid → SDK never executed them → toolResults empty.
+  inputSchema: z.object({
     goalType: z.enum(['skill', 'knowledge']).describe(
       'Goal type: "skill" for habit/practice-based goals (more regular tasks), ' +
       '"knowledge" for understanding/strategic goals (more strategic tasks)'
@@ -35,7 +39,8 @@ export const readyToGenerateQuests = tool({
     ),
   }),
   execute: async ({ goalType, goalSummary, rationaleForType }) => {
-    logger.debug('readyToGenerateQuests called', { goalType, summaryLength: goalSummary.length })
+    // [FIX] Use optional chaining — fallback path bypasses Zod so args may be missing
+    logger.debug('readyToGenerateQuests called', { goalType, summaryLength: goalSummary?.length ?? 0 })
     return { phase: 'quests', goalType, goalSummary, rationaleForType }
   },
 })
@@ -50,7 +55,8 @@ export const generateQuests = tool({
     'Generate 3–5 quest drafts (key results) for the goal. ' +
     'Each quest must have a numeric target, unit, and task breakdown. ' +
     'Call this after readyToGenerateQuests or when the user asks to regenerate quests.',
-  parameters: z.object({
+  // [FIX] Renamed parameters → inputSchema (see readyToGenerateQuests comment above)
+  inputSchema: z.object({
     quests: z
       .array(
         z.object({
@@ -78,10 +84,11 @@ export const generateQuests = tool({
       .max(5),
   }),
   execute: async ({ quests }) => {
+    // [FIX] Use optional chaining — fallback path bypasses Zod so args may be missing
     logger.debug('generateQuests called', {
-      questCount: quests.length,
-      totalRegular: quests.reduce((s, q) => s + q.regularTaskCount, 0),
-      totalStrategic: quests.reduce((s, q) => s + q.strategicTaskCount, 0),
+      questCount: quests?.length ?? 0,
+      totalRegular: quests?.reduce((s, q) => s + q.regularTaskCount, 0) ?? 0,
+      totalStrategic: quests?.reduce((s, q) => s + q.strategicTaskCount, 0) ?? 0,
     })
     return { phase: 'planning', quests }
   },
@@ -98,7 +105,8 @@ export const validateLoad = tool({
     'Report the result of fatigue load validation for the proposed 90-day task plan. ' +
     'Call this if the plan has days where projected fatigue exceeds 100%. ' +
     'If load is fine, you can skip this tool.',
-  parameters: z.object({
+  // [FIX] Renamed parameters → inputSchema (see readyToGenerateQuests comment above)
+  inputSchema: z.object({
     loadOk: z.boolean().describe('True if no day exceeds 100% fatigue in any category'),
     violationDays: z
       .array(z.string())
@@ -111,7 +119,8 @@ export const validateLoad = tool({
       ),
   }),
   execute: async ({ loadOk, violationDays, suggestion }) => {
-    logger.debug('validateLoad called', { loadOk, violationCount: violationDays.length, hasSuggestion: !!suggestion })
+    // [FIX] Use optional chaining — fallback path bypasses Zod so args may be missing
+    logger.debug('validateLoad called', { loadOk, violationCount: violationDays?.length ?? 0, hasSuggestion: !!suggestion })
     return { loadOk, violationDays, suggestion }
   },
 })

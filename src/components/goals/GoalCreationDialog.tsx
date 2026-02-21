@@ -56,30 +56,57 @@ export function GoalCreationDialog() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, sphereId])
 
-  const sendMessage = async (content: string) => {
-    if (!content.trim() || !sphereId || isLoading) return
-
-    if (process.env.NODE_ENV === 'development') {
-      console.debug('[GoalCreationDialog] sending message', { phase, messageLength: content.length })
+  // Core streaming call — does NOT touch the UI message list
+  const callAgent = async (
+    content: string,
+    options?: { forceGenerate?: boolean; forceToolName?: string }
+  ) => {
+    if (!sphereId) {
+      console.error('[FIX] callAgent: sphereId is null, aborting')
+      return
     }
 
-    addMessage({ role: 'user', content })
-    setInputValue('')
+    const { forceGenerate = false, forceToolName } = options ?? {}
+    console.log('[FIX] callAgent start', { sphereId, phase, forceGenerate, forceToolName, contentLength: content.length })
+
     setLoading(true)
     setError(null)
+
+    let chunkCount = 0
+    let hadTextDelta = false
+    let hadToolOutput = false
 
     try {
       const res = await fetch('/api/agents/goal-generator', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sphereId, message: content, phase }),
+        body: JSON.stringify({ sphereId, message: content, phase, forceGenerate, forceToolName }),
       })
 
       if (!res.ok) {
-        throw new Error(`Request failed: ${res.status}`)
+        let errorMsg = `Request failed: ${res.status}`
+        try {
+          const errorBody = await res.json() as { error?: string }
+          if (errorBody?.error) errorMsg = errorBody.error
+        } catch { /* ignore parse errors */ }
+        console.error('[FIX] goal-generator POST error', { status: res.status, error: errorMsg })
+        throw new Error(errorMsg)
       }
 
-      // Stream the response
+      // For forced tool calls, the route returns plain JSON (not a stream).
+      // This avoids the @ai-sdk/anthropic parallel-tool streaming bug.
+      if (forceGenerate && forceToolName) {
+        console.log('[FIX] forceGenerate: reading JSON response')
+        const json = await res.json() as { toolResult?: unknown; error?: string }
+        console.log('[FIX] forceGenerate JSON response', json)
+        if (json.toolResult != null) {
+          handleToolResult(json.toolResult)
+        } else {
+          throw new Error(json.error ?? 'No tool result in response')
+        }
+        return
+      }
+
       const reader = res.body?.getReader()
       const decoder = new TextDecoder()
 
@@ -96,82 +123,109 @@ export function GoalCreationDialog() {
         buffer = lines.pop() ?? ''
 
         for (const line of lines) {
-          if (line.startsWith('0:')) {
-            // Text delta
-            const text = JSON.parse(line.slice(2))
-            setStreamingMessage(text)
-          } else if (line.startsWith('8:')) {
-            // Tool call result
-            const toolResult = JSON.parse(line.slice(2))
-            handleToolResult(toolResult)
+          if (!line.startsWith('data: ')) continue
+          const jsonStr = line.slice(6).trim()
+          if (!jsonStr || jsonStr === '[DONE]') continue
+
+          let chunk: Record<string, unknown>
+          try {
+            chunk = JSON.parse(jsonStr) as Record<string, unknown>
+          } catch {
+            continue
+          }
+
+          chunkCount++
+          console.log('[FIX] stream chunk', { type: chunk.type, chunkCount })
+
+          if (chunk.type === 'text-delta') {
+            hadTextDelta = true
+            setStreamingMessage(chunk.delta as string)
+          } else if (chunk.type === 'tool-output-available') {
+            hadToolOutput = true
+            handleToolResult(chunk.output)
           }
         }
       }
 
+      console.log('[FIX] callAgent done', { chunkCount, hadTextDelta, hadToolOutput })
       finalizeStreamingMessage()
 
     } catch (err) {
+      console.error('[FIX] callAgent error', { error: err instanceof Error ? err.message : err })
       setError(err instanceof Error ? err.message : 'Connection failed')
     } finally {
       setLoading(false)
     }
   }
 
-  const handleToolResult = (result: unknown) => {
-    const r = result as Record<string, unknown>
+  const sendMessage = async (content: string) => {
+    if (!content.trim() || !sphereId || isLoading) return
 
     if (process.env.NODE_ENV === 'development') {
-      console.debug('[GoalCreationDialog] tool received', { result: r })
+      console.debug('[GoalCreationDialog] sending message', { phase, messageLength: content.length })
     }
 
-    if (r.phase === 'quests' && r.goalType) {
-      setDraftGoalType(r.goalType as 'skill' | 'knowledge')
-      if (process.env.NODE_ENV === 'development') {
-        console.debug('[GoalCreationDialog] phase transition', { from: phase, to: 'quests' })
+    addMessage({ role: 'user', content })
+    setInputValue('')
+    await callAgent(content)
+  }
+
+  const handleToolResult = (result: unknown) => {
+    try {
+      const r = result as Record<string, unknown>
+
+      console.log('[FIX] tool-output-available received', { phase: r.phase, goalType: r.goalType, questCount: Array.isArray(r.quests) ? r.quests.length : undefined })
+
+      if (r.phase === 'quests' && r.goalType) {
+        setDraftGoalType(r.goalType as 'skill' | 'knowledge')
+        console.log('[FIX] phase → quests', { goalType: r.goalType })
+        setPhase('quests')
       }
-      setPhase('quests')
-    }
 
-    if (r.phase === 'planning' && Array.isArray(r.quests)) {
-      // Convert agent quests to QuestDraft format
-      const drafts: QuestDraft[] = (r.quests as Array<{
-        title: string
-        targetValue: number
-        unit: string
-        regularTaskCount: number
-        strategicTaskCount: number
-      }>).map((q, i) => ({
-        title: q.title,
-        targetValue: q.targetValue,
-        unit: q.unit,
-        orderIndex: i,
-      }))
+      if (r.phase === 'planning' && Array.isArray(r.quests)) {
+        // Convert agent quests to QuestDraft format
+        const drafts: QuestDraft[] = (r.quests as Array<{
+          title: string
+          targetValue: number
+          unit: string
+          regularTaskCount: number
+          strategicTaskCount: number
+        }>).map((q, i) => ({
+          title: q.title,
+          targetValue: q.targetValue,
+          unit: q.unit,
+          orderIndex: i,
+        }))
 
-      const agentTaskCounts = (r.quests as Array<{
-        regularTaskCount: number
-        strategicTaskCount: number
-      }>).map(q => ({
-        regular: q.regularTaskCount,
-        strategic: q.strategicTaskCount,
-      }))
+        const agentTaskCounts = (r.quests as Array<{
+          regularTaskCount: number
+          strategicTaskCount: number
+        }>).map(q => ({
+          regular: q.regularTaskCount,
+          strategic: q.strategicTaskCount,
+        }))
 
-      setDraftQuests(drafts)
+        setDraftQuests(drafts)
 
-      // Generate 90-day plan
-      const today = new Date().toISOString().slice(0, 10)
-      const result = generateGoalPlan({
-        goalType: draftGoalType ?? 'skill',
-        startDate: today,
-        quests: drafts,
-        tasksPerQuest: agentTaskCounts,
-        existingDailyFatigue: [],
-      })
+        // Generate 90-day plan
+        const today = new Date().toISOString().slice(0, 10)
+        console.log('[FIX] calling generateGoalPlan', { questCount: drafts.length, agentTaskCounts })
+        const planResult = generateGoalPlan({
+          goalType: draftGoalType ?? 'skill',
+          startDate: today,
+          quests: drafts,
+          tasksPerQuest: agentTaskCounts,
+          existingDailyFatigue: [],
+        })
 
-      setPlanResult(result)
-      if (process.env.NODE_ENV === 'development') {
-        console.debug('[GoalCreationDialog] phase transition', { from: phase, to: 'preview' })
+        setPlanResult(planResult)
+        console.log('[FIX] phase → preview', { taskCount: planResult.tasks.length })
+        setPhase('preview')
       }
-      setPhase('preview')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[FIX] handleToolResult error', { error: msg, result })
+      setError(`Plan generation failed: ${msg}`)
     }
   }
 
@@ -418,28 +472,47 @@ export function GoalCreationDialog() {
                 padding: '0.875rem 1.25rem',
                 borderTop: '1px solid rgba(255,255,255,0.1)',
                 display: 'flex',
-                gap: '0.625rem',
-                alignItems: 'flex-end',
+                flexDirection: 'column',
+                gap: '0.5rem',
                 flexShrink: 0,
               }}
             >
-              <Textarea
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Describe your goal... (Enter to send, Shift+Enter for newline)"
-                rows={2}
-                disabled={isLoading}
-                style={{ resize: 'none', flex: 1 }}
-              />
-              <Button
-                onClick={() => sendMessage(inputValue)}
-                isLoading={isLoading}
-                disabled={!inputValue.trim()}
-                size="icon"
-              >
-                <Send size={16} />
-              </Button>
+              <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'flex-end' }}>
+                <Textarea
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Describe your goal... (Enter to send, Shift+Enter for newline)"
+                  rows={2}
+                  disabled={isLoading}
+                  style={{ resize: 'none', flex: 1 }}
+                />
+                <Button
+                  onClick={() => sendMessage(inputValue)}
+                  isLoading={isLoading}
+                  disabled={!inputValue.trim()}
+                  size="icon"
+                >
+                  <Send size={16} />
+                </Button>
+              </div>
+              {messages.length >= 2 && !isLoading && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <Button
+                    onClick={() => {
+                      console.log('[FIX] Generate Goal button clicked')
+                      void callAgent(
+                        'I am ready. Please call the readyToGenerateQuests tool now to proceed to quest generation.',
+                        { forceGenerate: true, forceToolName: 'readyToGenerateQuests' }
+                      )
+                    }}
+                    variant="ghost"
+                    style={{ fontSize: '0.8125rem', opacity: 0.7 }}
+                  >
+                    Generate Goal →
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
@@ -459,12 +532,16 @@ export function GoalCreationDialog() {
               </Button>
               <Button
                 onClick={() => {
-                  const valid = draftQuests.every(q => q.title.trim() && q.targetValue > 0 && q.unit.trim())
+                  const valid = draftQuests.length === 0 || draftQuests.every(q => q.title.trim() && q.targetValue > 0 && q.unit.trim())
                   if (!valid) { setError('All quest fields are required'); return }
                   setError(null)
                   setPhase('planning')
-                  // Trigger plan generation by sending a message to the agent
-                  sendMessage(`My quests are confirmed: ${draftQuests.map(q => q.title).join(', ')}. Please generate the task plan.`)
+                  console.log('[FIX] Generate Plan clicked', { questCount: draftQuests.length })
+                  const questTitles = draftQuests.map(q => q.title).filter(Boolean).join(', ')
+                  void callAgent(
+                    `Generate the quest plan now. Quests: ${questTitles || '(as discussed)'}`,
+                    { forceGenerate: true, forceToolName: 'generateQuests' }
+                  )
                 }}
                 isLoading={isLoading}
               >

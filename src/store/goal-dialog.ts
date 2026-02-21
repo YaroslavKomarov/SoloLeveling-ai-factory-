@@ -80,24 +80,24 @@ export const useGoalDialogStore = create<GoalDialogState>((set) => ({
       messages: [...state.messages, { ...msg, isStreaming: false }],
     })),
 
-  /** Start or update the last streaming assistant message */
-  setStreamingMessage: (content) =>
+  /** Append a streaming delta to the last assistant message (or start a new one) */
+  setStreamingMessage: (delta) =>
     set((state) => {
       const last = state.messages[state.messages.length - 1]
       if (last?.isStreaming) {
-        // Update existing streaming message
+        // Accumulate delta into existing streaming message
         return {
           messages: [
             ...state.messages.slice(0, -1),
-            { role: 'assistant', content, isStreaming: true },
+            { role: 'assistant', content: last.content + delta, isStreaming: true },
           ],
         }
       }
-      // Start new streaming message
+      // Start new streaming message with first delta
       return {
         messages: [
           ...state.messages,
-          { role: 'assistant', content, isStreaming: true },
+          { role: 'assistant', content: delta, isStreaming: true },
         ],
       }
     }),
