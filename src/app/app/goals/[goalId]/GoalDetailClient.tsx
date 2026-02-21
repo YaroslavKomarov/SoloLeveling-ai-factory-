@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardContent } from '@/components/ui/Card'
 import { QuestItem } from '@/components/goals/QuestItem'
+import { GoalAtRiskBanner } from '@/components/goals/GoalAtRiskBanner'
 import type { GoalRow, QuestRow, TaskRow } from '@/lib/supabase/types'
 
 interface GoalDetailClientProps {
@@ -148,6 +149,50 @@ export function GoalDetailClient({ goal, quests, upcomingTasks, sphereName }: Go
           </span>
         </div>
       </motion.div>
+
+      {/* At-risk banner */}
+      {goal.is_at_risk && goal.status === 'active' && (
+        <GoalAtRiskBanner goalTitle={goal.title} />
+      )}
+
+      {/* Failed notice (static — dialog only shown on Today page) */}
+      {goal.status === 'failed' && (
+        <div
+          style={{
+            marginBottom: '1rem',
+            padding: '0.875rem 1rem',
+            backgroundColor: 'rgba(10, 12, 16, 0.95)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+          }}
+        >
+          <p
+            style={{
+              fontFamily: 'Cinzel, serif',
+              fontSize: '0.6875rem',
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              color: 'rgba(255, 255, 255, 0.6)',
+              marginBottom: '0.25rem',
+            }}
+          >
+            This goal has failed
+          </p>
+          {goal.failure_reason && (
+            <p
+              style={{
+                fontFamily: 'Cormorant, serif',
+                fontSize: '0.875rem',
+                color: 'rgba(255, 255, 255, 0.35)',
+                fontStyle: 'italic',
+              }}
+            >
+              {goal.failure_reason === 'consecutive_skips'
+                ? 'Three consecutive sessions were missed without completion.'
+                : 'The overall task skip rate exceeded 20%.'}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Quests section */}
       <section style={{ marginBottom: '2rem' }}>
