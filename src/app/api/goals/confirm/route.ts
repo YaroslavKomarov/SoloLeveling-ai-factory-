@@ -7,6 +7,8 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createGoal, createQuests, clearDialogMessages } from '@/lib/supabase/goals'
 import { createTasks } from '@/lib/supabase/tasks'
+import { createNote } from '@/lib/supabase/notes'
+import { getSphereById } from '@/lib/supabase/spheres'
 import { createLogger } from '@/lib/logger'
 import type { GoalInsert, GoalType, QuestDraft, QuestInsert, TaskInsert, TaskPlanEntry } from '@/lib/supabase/types'
 
@@ -100,6 +102,30 @@ export async function POST(request: NextRequest) {
     await clearDialogMessages(supabase, user.id, sphereId)
 
     logger.info('goal confirmed', { goalId: goal.id, userId: user.id, taskCount: taskInserts.length })
+
+    // 5. Auto-create goal.md note (fire-and-forget — never blocks the response)
+    ;(async () => {
+      try {
+        const sphere = await getSphereById(supabase, sphereId)
+        const sphereName = sphere?.name ?? 'unknown'
+        const questChecklist = createdQuests
+          .map((q) => `- [ ] ${q.title} (target: ${q.target_value} ${q.unit})`)
+          .join('\n')
+
+        await createNote(supabase, {
+          user_id: user.id,
+          path: `${sphereName}/${goal.title}/goal.md`,
+          title: goal.title,
+          content: `---\ntype: goal\ngoal_id: ${goal.id}\nsphere_id: ${sphereId}\nstart_date: ${startDate}\nend_date: ${endDate}\n---\n# ${goal.title}\n\n## Key Results\n${questChecklist}\n`,
+        })
+        logger.info('Goal note auto-created', { goalId: goal.id, sphereName, goalTitle: goal.title })
+      } catch (err) {
+        logger.warn('Goal note auto-creation failed (non-blocking)', {
+          goalId: goal.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    })()
 
     return NextResponse.json({ goal })
 

@@ -1,0 +1,204 @@
+/**
+ * Vercel AI SDK tool definitions for the knowledge-rag agent.
+ *
+ * Tools:
+ *   searchNotes       — semantic vector search via Supabase RPC match_notes
+ *   getNoteContent    — fetch full note content by ID
+ *   getBacklinkedNotes — find notes that link back to a given title
+ *
+ * NOTE: Uses `inputSchema` (not `parameters`) — required for AI SDK v6.
+ */
+import { tool } from 'ai'
+import { z } from 'zod'
+import { createClient } from '@/lib/supabase/server'
+import { getNoteById, getBacklinks } from '@/lib/supabase/notes'
+import { createLogger } from '@/lib/logger'
+
+const logger = createLogger('KnowledgeRag/tools')
+
+// =============================================================
+// Tool 1: searchNotes
+// Semantic search over the user's notes via pgvector RPC.
+// =============================================================
+
+export const searchNotes = tool({
+  description:
+    'Perform semantic search over the user\'s knowledge base. ' +
+    'Returns the most relevant note chunks based on meaning, not exact keywords. ' +
+    'Use this as the first step for any factual question about the user\'s notes.',
+  inputSchema: z.object({
+    userId: z.string().describe('The user ID to search notes for'),
+    query: z.string().describe('The natural-language search query'),
+    limit: z.number().int().min(1).max(20).optional().default(5).describe('Max results to return (default 5)'),
+  }),
+  execute: async ({ userId, query, limit = 5 }) => {
+    logger.debug('searchNotes called', { userId, queryLength: query.length, limit })
+
+    try {
+      // Generate embedding for the query via OpenAI
+      const openAiKey = process.env.OPENAI_API_KEY
+      if (!openAiKey) {
+        logger.warn('OPENAI_API_KEY not set — returning empty search results')
+        return { results: [], error: 'Embedding service not configured' }
+      }
+
+      const embeddingRes = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${openAiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'text-embedding-3-small',
+          input: query,
+        }),
+      })
+
+      if (!embeddingRes.ok) {
+        const errText = await embeddingRes.text()
+        logger.error('OpenAI embedding request failed', { status: embeddingRes.status, error: errText })
+        return { results: [], error: 'Embedding generation failed' }
+      }
+
+      const embeddingData = (await embeddingRes.json()) as {
+        data: { embedding: number[] }[]
+      }
+      const queryEmbedding = embeddingData.data[0].embedding
+
+      logger.debug('Query embedding generated', { userId, dimensions: queryEmbedding.length })
+
+      // Call Supabase RPC match_notes
+      const supabase = await createClient()
+      const { data, error } = await supabase.rpc('match_notes', {
+        query_embedding: queryEmbedding,
+        match_user_id: userId,
+        match_count: limit,
+        match_threshold: 0.5,
+      })
+
+      if (error) {
+        logger.error('match_notes RPC failed', { userId, error: error.message })
+        return { results: [], error: error.message }
+      }
+
+      // Fetch note paths and titles for context
+      const results = await Promise.all(
+        (data ?? []).map(async (row: { note_id: string; content: string; similarity: number }) => {
+          const note = await getNoteById(supabase, row.note_id).catch(() => null)
+          return {
+            noteId: row.note_id,
+            path: note?.path ?? 'unknown',
+            title: note?.title ?? 'Unknown Note',
+            content: row.content,
+            similarity: Math.round(row.similarity * 100) / 100,
+          }
+        })
+      )
+
+      logger.debug('searchNotes results', { userId, count: results.length })
+      return { results }
+
+    } catch (err) {
+      logger.error('searchNotes error', { userId, error: err instanceof Error ? err.message : String(err) })
+      return { results: [], error: 'Search failed' }
+    }
+  },
+})
+
+// =============================================================
+// Tool 2: getNoteContent
+// Fetches the full content of a note by its ID.
+// =============================================================
+
+export const getNoteContent = tool({
+  description:
+    'Fetch the full content of a specific note by its ID. ' +
+    'Use after searchNotes to read a note in full detail. ' +
+    'Returns the note path, title, full content, and wikilinks.',
+  inputSchema: z.object({
+    noteId: z.string().uuid().describe('The UUID of the note to fetch'),
+  }),
+  execute: async ({ noteId }) => {
+    logger.debug('getNoteContent called', { noteId })
+
+    try {
+      const supabase = await createClient()
+      const note = await getNoteById(supabase, noteId)
+
+      if (!note) {
+        logger.warn('getNoteContent — note not found', { noteId })
+        return { error: `Note ${noteId} not found` }
+      }
+
+      logger.debug('getNoteContent result', { noteId, path: note.path, contentLength: note.content.length })
+      return {
+        noteId: note.id,
+        path: note.path,
+        title: note.title,
+        content: note.content,
+        wikilinks: note.wikilinks,
+        tags: note.tags,
+      }
+
+    } catch (err) {
+      logger.error('getNoteContent error', { noteId, error: err instanceof Error ? err.message : String(err) })
+      return { error: 'Failed to fetch note' }
+    }
+  },
+})
+
+// =============================================================
+// Tool 3: getBacklinkedNotes
+// Finds notes that link back to a given title (graph traversal).
+// =============================================================
+
+export const getBacklinkedNotes = tool({
+  description:
+    'Find all notes in the knowledge base that contain a wikilink to the given note title. ' +
+    'Use this to discover connected context and traverse the knowledge graph. ' +
+    'Supports up to 2 levels of traversal for broader context.',
+  inputSchema: z.object({
+    userId: z.string().describe('The user ID'),
+    noteTitle: z.string().describe('The note title to find backlinks for'),
+    levels: z.number().int().min(1).max(2).optional().default(1).describe('How many levels of backlinks to traverse (default 1, max 2)'),
+  }),
+  execute: async ({ userId, noteTitle, levels = 1 }) => {
+    logger.debug('getBacklinkedNotes called', { userId, noteTitle, levels })
+
+    try {
+      const supabase = await createClient()
+
+      // Level 1 backlinks
+      const level1 = await getBacklinks(supabase, userId, noteTitle)
+      logger.debug('Level 1 backlinks', { noteTitle, count: level1.length })
+
+      const allNotes = [...level1]
+
+      // Level 2 backlinks (find what links to level-1 notes)
+      if (levels >= 2 && level1.length > 0) {
+        for (const note of level1) {
+          const level2 = await getBacklinks(supabase, userId, note.title)
+          for (const n of level2) {
+            if (!allNotes.some((existing) => existing.id === n.id)) {
+              allNotes.push(n)
+            }
+          }
+        }
+        logger.debug('Level 2 backlinks total', { noteTitle, totalCount: allNotes.length })
+      }
+
+      const results = allNotes.map((note) => ({
+        noteId: note.id,
+        path: note.path,
+        title: note.title,
+        contentPreview: note.content.slice(0, 200),
+      }))
+
+      return { results, totalCount: results.length }
+
+    } catch (err) {
+      logger.error('getBacklinkedNotes error', { userId, noteTitle, error: err instanceof Error ? err.message : String(err) })
+      return { results: [], totalCount: 0, error: 'Backlinks lookup failed' }
+    }
+  },
+})

@@ -3,6 +3,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database, SphereInsert, SphereRow, SphereUpdate } from './types'
+import { createNote } from './notes'
 import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('spheres')
@@ -24,6 +25,19 @@ export async function createSphere(supabase: DB, insert: SphereInsert): Promise<
   }
 
   logger.debug('sphere created', { id: data.id, name: data.name })
+
+  // Auto-create sphere.md note (fire-and-forget — never blocks the main operation)
+  createNote(supabase, {
+    user_id: data.user_id,
+    path: `${data.name}/sphere.md`,
+    title: data.name,
+    content: `---\ntype: sphere\nsphere_id: ${data.id}\n---\n# ${data.name}\n${data.description ?? ''}\n`,
+  }).then(() => {
+    logger.info('Sphere note auto-created', { sphereId: data.id, name: data.name })
+  }).catch((err: Error) => {
+    logger.warn('Sphere note auto-creation failed (non-blocking)', { sphereId: data.id, error: err.message })
+  })
+
   return data
 }
 
