@@ -10,33 +10,34 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.46",
+    "@ai-sdk/openai": "^3.0.30",
+    "@hookform/resolvers": "^3.0.0",
+    "@supabase/ssr": "^0.5.0",
+    "@supabase/supabase-js": "^2.0.0",
+    "ai": "^6.0.94",
+    "framer-motion": "^11.0.0",
+    "lucide-react": "^0.400.0",
     "next": "^15.0.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "@supabase/supabase-js": "^2.0.0",
-    "@supabase/ssr": "^0.5.0",
-    "zustand": "^5.0.0",
     "react-hook-form": "^7.0.0",
-    "@hookform/resolvers": "^3.0.0",
-    "zod": "^3.0.0",
-    "framer-motion": "^11.0.0",
-    "lucide-react": "^0.400.0",
     "recharts": "^2.0.0",
-    "ai": "^4.0.0",
-    "@ai-sdk/anthropic": "^1.0.0"
+    "zod": "^3.0.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
+    "@testing-library/jest-dom": "^6.0.0",
+    "@testing-library/react": "^16.0.0",
     "@types/node": "^20.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
-    "tailwindcss": "^3.4.0",
-    "postcss": "^8.0.0",
-    "autoprefixer": "^10.0.0",
-    "vitest": "^2.0.0",
     "@vitejs/plugin-react": "^4.0.0",
-    "@testing-library/react": "^16.0.0",
-    "@testing-library/jest-dom": "^6.0.0",
-    "jsdom": "^25.0.0"
+    "autoprefixer": "^10.0.0",
+    "jsdom": "^25.0.0",
+    "postcss": "^8.0.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0"
   }
 }

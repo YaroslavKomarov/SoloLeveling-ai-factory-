@@ -232,7 +232,21 @@ export async function getDialogMessages(
     .order('created_at', { ascending: true })
 
   if (error) {
-    logger.error('getDialogMessages failed', { userId, sphereId, error: error.message })
+    // [FIX] Distinguish network-level failures (TypeError: fetch failed) from API errors
+    const isFetchFailed = error.message?.includes('fetch failed') || error.message?.includes('ECONNREFUSED') || error.message?.includes('ENOTFOUND')
+    logger.error('getDialogMessages failed', {
+      userId,
+      sphereId,
+      error: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      isFetchFailed,
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL?.slice(0, 30) + '...',
+    })
+    if (isFetchFailed) {
+      throw new Error(`getDialogMessages: network error — cannot reach Supabase (${error.message}). Check if NEXT_PUBLIC_SUPABASE_URL is correct and the project is not paused.`)
+    }
     throw new Error(`getDialogMessages: ${error.message}`)
   }
 

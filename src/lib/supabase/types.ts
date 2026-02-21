@@ -182,6 +182,7 @@ export interface TaskRow {
   total_skips: number
   total_occurrences: number
   sequence_index: number | null     // compaction order (strategic only)
+  completion_note: string | null    // required for strategic tasks, optional for regular
   created_at: string
   updated_at: string
 }
@@ -197,6 +198,7 @@ export type TaskInsert = Omit<TaskRow, 'id' | 'created_at' | 'updated_at'> & {
   total_skips?: number
   total_occurrences?: number
   sequence_index?: number | null
+  completion_note?: string | null
 }
 
 export type TaskUpdate = Partial<Omit<TaskRow, 'id' | 'user_id' | 'goal_id' | 'created_at'>>

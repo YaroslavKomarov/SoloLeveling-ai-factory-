@@ -1,8 +1,11 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { Settings, Dumbbell, Heart, Cpu, AlertTriangle } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import Link from 'next/link'
 import { Progress } from '@/components/ui/Progress'
+import { useUserStore } from '@/store/user'
 import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('UserPanel')
@@ -54,12 +57,48 @@ function CornerBrackets({
 }
 
 export function UserPanel({
-  level = 1,
-  xp = 0,
-  xpToNext = 100,
-  fatigue = { physical: 0, emotional: 0, intellectual: 0 },
+  level: initialLevel = 1,
+  xp: initialXp = 0,
+  xpToNext: initialXpToNext = 100,
+  fatigue: initialFatigue = { physical: 0, emotional: 0, intellectual: 0 },
 }: UserPanelProps) {
-  logger.debug('rendered', { level, fatigue })
+  const setUser = useUserStore((s) => s.setUser)
+  const setFatigue = useUserStore((s) => s.setFatigue)
+  const level = useUserStore((s) => s.level)
+  const xp = useUserStore((s) => s.xp)
+  const xpToNext = useUserStore((s) => s.xpToNext)
+  const fatigue = useUserStore((s) => s.fatigue)
+
+  // XP toast state: show "+N XP" floating indicator on XP gain
+  const [xpToast, setXpToast] = useState<number | null>(null)
+  const prevXpRef = useRef(initialXp)
+
+  // Initialize store with server-fetched values on first render
+  useEffect(() => {
+    logger.debug('Initializing UserPanel store', { level: initialLevel, xp: initialXp })
+    setUser({
+      level: initialLevel,
+      xp: initialXp,
+      xpToNext: initialXpToNext,
+      isLoaded: true,
+    })
+    setFatigue(initialFatigue)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show XP toast when XP increases
+  useEffect(() => {
+    const delta = xp - prevXpRef.current
+    if (delta > 0) {
+      logger.debug(`XP animation: +${delta} XP`)
+      setXpToast(delta)
+      const timeout = setTimeout(() => setXpToast(null), 1800)
+      prevXpRef.current = xp
+      return () => clearTimeout(timeout)
+    }
+    prevXpRef.current = xp
+  }, [xp])
+
+  logger.debug('Fatigue updated', { fatigue })
 
   const anyFatigueHigh = fatigue.physical >= 91 || fatigue.emotional >= 91 || fatigue.intellectual >= 91
 
@@ -76,6 +115,7 @@ export function UserPanel({
         flexDirection: 'row',
         alignItems: 'stretch',
         backdropFilter: 'blur(6px)',
+        position: 'relative',
       }}
     >
       {/* Panel corner brackets */}
@@ -132,7 +172,7 @@ export function UserPanel({
         }}
       >
         {/* Row 1: Level text + XP bar + XP numbers */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', position: 'relative' }}>
           <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
             <span
               style={{
@@ -164,8 +204,35 @@ export function UserPanel({
             </div>
           </div>
 
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, position: 'relative' }}>
             <Progress value={xp} max={xpToNext} color="white" height="0.25rem" />
+
+            {/* XP floating toast */}
+            <AnimatePresence>
+              {xpToast !== null && (
+                <motion.span
+                  key="xp-toast"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: -2 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3 }}
+                  style={{
+                    position: 'absolute',
+                    top: '-1.25rem',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    fontFamily: 'Orbitron, monospace',
+                    fontSize: '0.6rem',
+                    color: '#ffffff',
+                    textShadow: '0 0 8px rgba(255, 255, 255, 0.6)',
+                    whiteSpace: 'nowrap',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  +{xpToast} XP
+                </motion.span>
+              )}
+            </AnimatePresence>
           </div>
 
           <span
@@ -183,19 +250,19 @@ export function UserPanel({
 
         {/* Row 2: Fatigue bars */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
-          <HorizontalFatigueBar
+          <AnimatedFatigueBar
             icon={<Dumbbell size={13} strokeWidth={1.5} />}
             label="Physical"
             value={fatigue.physical}
             color="physical"
           />
-          <HorizontalFatigueBar
+          <AnimatedFatigueBar
             icon={<Heart size={13} strokeWidth={1.5} />}
             label="Emotional"
             value={fatigue.emotional}
             color="emotional"
           />
-          <HorizontalFatigueBar
+          <AnimatedFatigueBar
             icon={<Cpu size={13} strokeWidth={1.5} />}
             label="Intellectual"
             value={fatigue.intellectual}
@@ -237,7 +304,7 @@ export function UserPanel({
   )
 }
 
-function HorizontalFatigueBar({
+function AnimatedFatigueBar({
   icon,
   label,
   value,
@@ -254,11 +321,15 @@ function HorizontalFatigueBar({
     intellectual: '#a855f7',
   }
   const textColor = colorMap[color]
+  const isHigh = value >= 91
+  const isMedium = value >= 61 && value < 91
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-        <span style={{ color: textColor, display: 'flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
+        <span style={{ color: textColor, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+          {icon}
+        </span>
         <span
           style={{
             flex: 1,
@@ -284,8 +355,39 @@ function HorizontalFatigueBar({
         >
           {value}%
         </span>
+        {isHigh && (
+          <AlertTriangle
+            size={10}
+            strokeWidth={1.5}
+            title="High fatigue — task performance may suffer"
+            style={{ color: textColor, flexShrink: 0 }}
+          />
+        )}
       </div>
-      <Progress value={value} max={100} color={color} height="0.1875rem" />
+
+      {/* Animated fatigue bar using Framer Motion spring */}
+      <div
+        style={{
+          height: '0.1875rem',
+          backgroundColor: 'rgba(255, 255, 255, 0.08)',
+          position: 'relative',
+          overflow: 'hidden',
+          boxShadow: isHigh ? `0 0 6px ${textColor}` : undefined,
+        }}
+      >
+        <motion.div
+          animate={{ width: `${value}%` }}
+          transition={{ type: 'spring', stiffness: 100, damping: 20 }}
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            height: '100%',
+            backgroundColor: textColor,
+            opacity: isMedium ? 0.8 : 1,
+          }}
+        />
+      </div>
     </div>
   )
 }

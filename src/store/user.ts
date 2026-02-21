@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+import { createLogger } from '@/lib/logger'
+
+const logger = createLogger('UserStore')
 
 export interface FatigueState {
   physical: number
@@ -15,9 +18,13 @@ export interface UserState {
   avatarUrl: string | null
   isLoaded: boolean
 
-  setUser: (data: Partial<Omit<UserState, 'setUser' | 'setFatigue' | 'addXp'>>) => void
+  setUser: (data: Partial<Omit<UserState, 'setUser' | 'setFatigue' | 'addXp' | 'incrementFatigue' | 'setXp'>>) => void
   setFatigue: (fatigue: Partial<FatigueState>) => void
   addXp: (amount: number) => void
+  /** Optimistic fatigue increment: adds delta to all three fatigue types (capped at 100) */
+  incrementFatigue: (delta: number) => void
+  /** Sync XP and level from server response after task completion */
+  setXp: (xp: number, level: number) => void
 }
 
 function calcXpToNext(level: number): number {
@@ -52,5 +59,26 @@ export const useUserStore = create<UserState>((set) => ({
         }
       }
       return { xp: newXp }
+    }),
+
+  incrementFatigue: (delta) =>
+    set((state) => {
+      const newFatigue = {
+        physical: Math.min(100, state.fatigue.physical + delta),
+        emotional: Math.min(100, state.fatigue.emotional + delta),
+        intellectual: Math.min(100, state.fatigue.intellectual + delta),
+      }
+      logger.debug('Fatigue updated', { delta, newFatigue })
+      return { fatigue: newFatigue }
+    }),
+
+  setXp: (xp, level) =>
+    set(() => {
+      logger.debug('XP animation', { xp, level })
+      return {
+        xp,
+        level,
+        xpToNext: calcXpToNext(level),
+      }
     }),
 }))

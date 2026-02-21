@@ -1,6 +1,7 @@
 import { Navigation } from '@/components/layout/Navigation'
 import { UserPanel } from '@/components/layout/UserPanel'
 import { PageTransition } from '@/components/layout/PageTransition'
+import { LevelUpModal } from '@/components/ui/LevelUpModal'
 import { createClient } from '@/lib/supabase/server'
 import { createLogger } from '@/lib/logger'
 
@@ -59,6 +60,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <PageTransition>{children}</PageTransition>
         </div>
       </main>
+      <LevelUpModal />
     </>
   )
 }

@@ -4,10 +4,10 @@
  * Keeps dialog history within LLM context limits by replacing
  * older messages with a rolling summary when the count exceeds MAX_RECENT_MESSAGES.
  */
-import type { CoreMessage } from 'ai'
+import type { ModelMessage } from 'ai'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getFastModel } from '@/lib/ai/provider'
 import type { Database, GoalDialogMessageRow } from '@/lib/supabase/types'
 import { getDialogMessages, replaceSummary } from '@/lib/supabase/goals'
 import { createLogger } from '@/lib/logger'
@@ -20,7 +20,7 @@ const MAX_RECENT_MESSAGES = 10
 type DB = SupabaseClient<Database>
 
 /**
- * Builds the CoreMessage[] array to send to the LLM.
+ * Builds the ModelMessage[] array to send to the LLM.
  *
  * If message count > MAX_RECENT_MESSAGES:
  * 1. Takes the oldest messages (excluding any existing summary)
@@ -37,7 +37,7 @@ export async function buildContextMessages(
   userProfile: string,
   activeGoalsSummary: string,
   calendarConnected: boolean
-): Promise<CoreMessage[]> {
+): Promise<ModelMessage[]> {
   logger.debug('buildContextMessages', { userId, sphereId, calendarConnected })
 
   const dbMessages = await getDialogMessages(supabase, userId, sphereId)
@@ -85,7 +85,7 @@ export async function buildContextMessages(
     summaryLength: summaryContent.length,
   })
 
-  const summaryMessage: CoreMessage = {
+  const summaryMessage: ModelMessage = {
     role: 'assistant',
     content: `[CONVERSATION SUMMARY]\n${summaryContent}`,
   }
@@ -97,7 +97,7 @@ export async function buildContextMessages(
 // Internal helpers
 // =============================================================
 
-function toCoreMesage(row: GoalDialogMessageRow): CoreMessage {
+function toCoreMesage(row: GoalDialogMessageRow): ModelMessage {
   return { role: row.role as 'user' | 'assistant', content: row.content }
 }
 
@@ -112,13 +112,13 @@ async function summarizeMessages(
     .join('\n\n')
 
   const { text } = await generateText({
-    model: anthropic('claude-haiku-4-5-20251001'),
+    model: getFastModel(),
     system:
       'You are a summarization assistant. Summarize the following goal-creation conversation ' +
       'preserving all key facts: the goal description, user constraints, decisions made, ' +
       'and any quests or tasks discussed. Be concise but complete. Write in the same language as the conversation.',
     prompt: `User profile context:\n${userProfile}\n\nConversation to summarize:\n${conversation}`,
-    maxTokens: 500,
+    maxOutputTokens: 500,
   })
 
   logger.debug('summary generated', { summaryLength: text.length })
