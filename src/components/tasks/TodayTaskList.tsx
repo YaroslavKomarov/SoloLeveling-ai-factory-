@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { AnimatePresence } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import type { TaskRow, GoalRow } from '@/lib/supabase/types'
 import { useTasksStore } from '@/store/tasks'
 import { useUserStore } from '@/store/user'
 import { TaskCard } from '@/components/tasks/TaskCard'
 import { GoalAtRiskBanner } from '@/components/goals/GoalAtRiskBanner'
 import { GoalFailureDialog } from '@/components/goals/GoalFailureDialog'
+import { staggerContainer } from '@/lib/animations/variants'
 import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('TodayTaskList')
@@ -182,8 +183,13 @@ export function TodayTaskList({ tasks, fatigue, goals, failedGoals, atRiskGoals 
                 </span>
               </div>
 
-              {/* Task cards */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {/* Task cards — stagger container drives fadeInUp variants in TaskCard */}
+              <motion.div
+                initial="hidden"
+                animate="visible"
+                variants={staggerContainer}
+                style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}
+              >
                 {goalTasks.map((task) => (
                   <TaskCard
                     key={task.id}
@@ -191,7 +197,7 @@ export function TodayTaskList({ tasks, fatigue, goals, failedGoals, atRiskGoals 
                     goalTitle={goalTitle}
                   />
                 ))}
-              </div>
+              </motion.div>
             </div>
           )
         })}

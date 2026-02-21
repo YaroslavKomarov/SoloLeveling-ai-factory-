@@ -447,6 +447,44 @@ Deno.serve(async (req: Request) => {
         result.tasksPlanned += tomorrowTasks?.length ?? 0
         result.usersProcessed++
 
+        // Step 8: Send push notification — daily mission briefing
+        const appUrl = Deno.env.get('NEXT_PUBLIC_APP_URL')
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+        const taskCount = tomorrowTasks?.length ?? 0
+
+        if (appUrl && serviceRoleKey) {
+          log(`Sending push notification to user ${userId}`, { taskCount })
+          try {
+            const pushRes = await fetch(`${appUrl}/api/notifications/send`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${serviceRoleKey}`,
+              },
+              body: JSON.stringify({
+                userId,
+                title: 'DAILY MISSION BRIEFING',
+                body: taskCount > 0
+                  ? `${taskCount} task${taskCount !== 1 ? 's' : ''} scheduled for today. Execute.`
+                  : 'No tasks scheduled. Rest and recover.',
+                url: '/app/today',
+              }),
+            })
+
+            if (!pushRes.ok) {
+              warn(`Push notification failed for user ${userId}`, { status: pushRes.status })
+            } else {
+              log(`Push notification sent to user ${userId}`)
+            }
+          } catch (pushError) {
+            warn(`Push notification error for user ${userId}`, {
+              error: pushError instanceof Error ? pushError.message : String(pushError),
+            })
+          }
+        } else {
+          log(`Push notifications skipped — NEXT_PUBLIC_APP_URL or service role key not set`)
+        }
+
       } catch (userError) {
         error(`Error processing user ${userId}`, {
           error: userError instanceof Error ? userError.message : String(userError),
