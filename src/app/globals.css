@@ -171,6 +171,22 @@ select {
 }
 
 /* ============================================================
+   Skill Tree — at-risk node pulsing border
+   ============================================================ */
+@keyframes at-risk-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 1px #f59e0b, 0 0 4px rgba(245, 158, 11, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 2px #f59e0b, 0 0 10px rgba(245, 158, 11, 0.7);
+  }
+}
+
+.goal-node-at-risk {
+  animation: at-risk-pulse 2s ease-in-out infinite;
+}
+
+/* ============================================================
    Glow utility classes
    ============================================================ */
 @layer utilities {
