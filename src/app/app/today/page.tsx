@@ -1,12 +1,13 @@
 /**
  * Today's task execution page — Server Component.
- * Fetches today's tasks, fatigue, and active goals, then passes to TodayTaskList.
+ * Fetches today's tasks, fatigue, active goals, failed unacknowledged goals,
+ * and at-risk goals, then passes to TodayTaskList.
  */
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getTasksByDate } from '@/lib/supabase/tasks'
 import { getDailyFatigue } from '@/lib/supabase/tasks'
-import { getGoalsByUser } from '@/lib/supabase/goals'
+import { getGoalsByUser, getFailedUnacknowledgedGoals } from '@/lib/supabase/goals'
 import { TodayTaskList } from '@/components/tasks/TodayTaskList'
 import { createLogger } from '@/lib/logger'
 
@@ -27,11 +28,15 @@ export default async function TodayPage() {
   const today = getTodayUTC()
   logger.debug(`Fetching tasks for userId=${user.id}, date=${today}`)
 
-  const [tasks, fatigue, goals] = await Promise.all([
+  const [tasks, fatigue, goals, failedGoals] = await Promise.all([
     getTasksByDate(supabase, user.id, today),
     getDailyFatigue(supabase, user.id, today),
     getGoalsByUser(supabase, user.id, 'active'),
+    getFailedUnacknowledgedGoals(supabase, user.id),
   ])
+
+  // Fetch active goals that are at risk
+  const atRiskGoals = goals.filter((g) => g.is_at_risk)
 
   logger.debug('TodayPage data fetched', {
     taskCount: tasks.length,
@@ -39,6 +44,8 @@ export default async function TodayPage() {
       ? { physical: fatigue.physical, emotional: fatigue.emotional, intellectual: fatigue.intellectual }
       : 'none (first visit today)',
     activeGoals: goals.length,
+    failedUnacknowledgedGoals: failedGoals.length,
+    atRiskGoals: atRiskGoals.length,
   })
 
   const initialFatigue = fatigue ?? {
@@ -52,6 +59,8 @@ export default async function TodayPage() {
       tasks={tasks}
       fatigue={initialFatigue}
       goals={goals}
+      failedGoals={failedGoals}
+      atRiskGoals={atRiskGoals}
     />
   )
 }

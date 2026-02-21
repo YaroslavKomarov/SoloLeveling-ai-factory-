@@ -9,7 +9,9 @@
  * 2. Detect missed tasks from yesterday
  * 3. Increment consecutive_skips for missed regular tasks
  * 4. Check goal failure conditions → failGoal if triggered
- * 5. Run daily planner agent for tomorrow
+ * 5. Redistribute missed strategic tasks (compaction algorithm)
+ * 6. Re-run compaction for already-at-risk goals (slots may have freed up)
+ * 7. Run daily planner agent for tomorrow
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -30,8 +32,153 @@ interface NightlyResult {
   usersProcessed: number
   tasksPlanned: number
   goalsFailed: number
+  tasksRescheduled: number
+  goalsAtRisk: number
   durationMs: number
 }
+
+// ===========================================================================
+// Inline compaction helpers (cannot import Node modules in Deno edge)
+// ===========================================================================
+
+const DAILY_MAX_PER_GOAL = 2
+
+function dateRange(startDate: string, endDate: string): string[] {
+  const dates: string[] = []
+  const current = new Date(startDate + 'T00:00:00Z')
+  const end = new Date(endDate + 'T00:00:00Z')
+  while (current <= end) {
+    dates.push(current.toISOString().slice(0, 10))
+    current.setUTCDate(current.getUTCDate() + 1)
+  }
+  return dates
+}
+
+async function getDailyStrategicTaskCounts(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  userId: string,
+  fromDate: string,
+  toDate: string
+): Promise<Map<string, number>> {
+  const { data, error: fetchError } = await supabase
+    .from('tasks')
+    .select('scheduled_date')
+    .eq('user_id', userId)
+    .eq('task_type', 'strategic')
+    .in('status', ['scheduled'])
+    .gte('scheduled_date', fromDate)
+    .lte('scheduled_date', toDate)
+
+  if (fetchError) {
+    warn('getDailyStrategicTaskCounts failed', { userId, error: fetchError.message })
+    return new Map()
+  }
+
+  const counts = new Map<string, number>()
+  for (const row of data ?? []) {
+    const d = row.scheduled_date
+    counts.set(d, (counts.get(d) ?? 0) + 1)
+  }
+  return counts
+}
+
+interface RedistributionResult {
+  rescheduled: number
+  unscheduled: number
+  isAtRisk: boolean
+}
+
+async function redistributeMissedStrategicTasks(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  userId: string,
+  goalId: string,
+  goalEndDate: string,
+  tomorrow: string
+): Promise<RedistributionResult> {
+  const { data: allTasks, error: fetchError } = await supabase
+    .from('tasks')
+    .select()
+    .eq('goal_id', goalId)
+    .eq('task_type', 'strategic')
+    .in('status', ['scheduled', 'missed'])
+    .order('sequence_index', { ascending: true })
+
+  if (fetchError) {
+    error('redistribution task fetch failed', { goalId, error: fetchError.message })
+    return { rescheduled: 0, unscheduled: 0, isAtRisk: false }
+  }
+
+  const tasks = allTasks ?? []
+  const futureTasks = tasks.filter(
+    // deno-lint-ignore no-explicit-any
+    (t: any) => t.status === 'scheduled' && t.scheduled_date >= tomorrow
+  )
+  // deno-lint-ignore no-explicit-any
+  const missedTasks = tasks.filter((t: any) =>
+    t.status === 'missed' || (t.status === 'scheduled' && t.scheduled_date < tomorrow)
+  )
+
+  if (missedTasks.length === 0) {
+    return { rescheduled: 0, unscheduled: 0, isAtRisk: false }
+  }
+
+  if (tomorrow > goalEndDate) {
+    return { rescheduled: 0, unscheduled: missedTasks.length, isAtRisk: true }
+  }
+
+  const days = dateRange(tomorrow, goalEndDate)
+  const dailyCounts = await getDailyStrategicTaskCounts(supabase, userId, tomorrow, goalEndDate)
+
+  const goalDailyCount = new Map<string, number>()
+  // deno-lint-ignore no-explicit-any
+  for (const ft of futureTasks as any[]) {
+    goalDailyCount.set(ft.scheduled_date, (goalDailyCount.get(ft.scheduled_date) ?? 0) + 1)
+  }
+
+  let rescheduled = 0
+  let unscheduled = 0
+  const updates: Array<{ id: string; newDate: string }> = []
+
+  // deno-lint-ignore no-explicit-any
+  for (const task of missedTasks as any[]) {
+    let bestDay: string | null = null
+    let bestCount = Infinity
+
+    for (const day of days) {
+      const goalCount = goalDailyCount.get(day) ?? 0
+      if (goalCount >= DAILY_MAX_PER_GOAL) continue
+      const totalCount = dailyCounts.get(day) ?? 0
+      if (totalCount < bestCount) {
+        bestCount = totalCount
+        bestDay = day
+      }
+    }
+
+    if (!bestDay) {
+      warn('Strategic task could not be scheduled before deadline', { taskId: task.id, goalEndDate })
+      unscheduled++
+      continue
+    }
+
+    updates.push({ id: task.id, newDate: bestDay })
+    goalDailyCount.set(bestDay, (goalDailyCount.get(bestDay) ?? 0) + 1)
+    dailyCounts.set(bestDay, (dailyCounts.get(bestDay) ?? 0) + 1)
+    rescheduled++
+  }
+
+  for (const { id, newDate } of updates) {
+    await supabase
+      .from('tasks')
+      .update({ scheduled_date: newDate, status: 'scheduled' })
+      .eq('id', id)
+  }
+
+  return { rescheduled, unscheduled, isAtRisk: unscheduled > 0 }
+}
+
+// ===========================================================================
 
 Deno.serve(async (req: Request) => {
   const runStart = Date.now()
@@ -68,6 +215,8 @@ Deno.serve(async (req: Request) => {
       usersProcessed: 0,
       tasksPlanned: 0,
       goalsFailed: 0,
+      tasksRescheduled: 0,
+      goalsAtRisk: 0,
       durationMs: 0,
     }
 
@@ -76,7 +225,7 @@ Deno.serve(async (req: Request) => {
       log(`Processing user ${i + 1}/${total}: ${userId}`)
 
       try {
-        // Step 2a: Reset daily_fatigue for today
+        // Step 1: Reset daily_fatigue for today
         const { error: fatigueError } = await supabase
           .from('daily_fatigue')
           .upsert(
@@ -90,7 +239,7 @@ Deno.serve(async (req: Request) => {
           log(`Fatigue reset for user ${userId} on ${today}`)
         }
 
-        // Step 2b: Detect missed tasks from yesterday
+        // Step 2: Detect missed tasks from yesterday
         const { data: missedTasks, error: missedError } = await supabase
           .from('tasks')
           .select()
@@ -104,7 +253,7 @@ Deno.serve(async (req: Request) => {
           log(`Missed tasks for user ${userId}: ${missedTasks?.length ?? 0}`, { date: yesterday })
         }
 
-        // Step 2c: Skip detection — for each missed regular task, increment consecutive_skips
+        // Step 3: Skip detection — for each missed regular task, increment consecutive_skips
         const goalFailureCandidates: Record<string, { consecutiveSkips: number; skipRate: number; taskId: string }> = {}
 
         for (const task of (missedTasks ?? [])) {
@@ -136,7 +285,7 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // Step 2d: Check goal failure conditions
+        // Step 4: Check goal failure conditions
         for (const [goalId, stats] of Object.entries(goalFailureCandidates)) {
           const isConsecutiveFail = stats.consecutiveSkips >= 3
           const isSkipRateFail = stats.skipRate >= 0.20
@@ -170,7 +319,119 @@ Deno.serve(async (req: Request) => {
           }
         }
 
-        // Step 2e: Run daily planner for tomorrow
+        // Step 5: Strategic task redistribution for newly missed strategic tasks
+        const missedStrategicByGoal: Record<string, string> = {} // goalId → end_date
+
+        for (const task of (missedTasks ?? [])) {
+          if (task.task_type !== 'strategic') continue
+
+          // Mark as missed (update status)
+          await supabase
+            .from('tasks')
+            .update({ status: 'missed' })
+            .eq('id', task.id)
+
+          // Collect goal IDs — we'll fetch their end dates below
+          missedStrategicByGoal[task.goal_id] = '' // placeholder
+        }
+
+        const goalsWithNewMisses = Object.keys(missedStrategicByGoal)
+        if (goalsWithNewMisses.length > 0) {
+          log(`Processing strategic task redistribution`, { userId, goalsWithMisses: goalsWithNewMisses.length })
+
+          // Fetch goal end_dates for goals with new misses
+          const { data: goalRows } = await supabase
+            .from('goals')
+            .select('id, end_date')
+            .in('id', goalsWithNewMisses)
+            .eq('status', 'active')
+
+          for (const goalRow of (goalRows ?? [])) {
+            const redistResult = await redistributeMissedStrategicTasks(
+              supabase,
+              userId,
+              goalRow.id,
+              goalRow.end_date,
+              tomorrow
+            )
+
+            log(`Redistribution result per goal`, {
+              goalId: goalRow.id,
+              rescheduled: redistResult.rescheduled,
+              unscheduled: redistResult.unscheduled,
+              isAtRisk: redistResult.isAtRisk,
+            })
+
+            result.tasksRescheduled += redistResult.rescheduled
+
+            // Fetch previous risk status to detect changes
+            const { data: prevGoal } = await supabase
+              .from('goals')
+              .select('is_at_risk')
+              .eq('id', goalRow.id)
+              .single()
+
+            const wasAtRisk = prevGoal?.is_at_risk ?? false
+
+            await supabase
+              .from('goals')
+              .update({ is_at_risk: redistResult.isAtRisk })
+              .eq('id', goalRow.id)
+
+            if (wasAtRisk !== redistResult.isAtRisk) {
+              log(`Goal at-risk status changed`, {
+                goalId: goalRow.id,
+                wasAtRisk,
+                isAtRisk: redistResult.isAtRisk,
+              })
+            }
+
+            if (redistResult.isAtRisk) result.goalsAtRisk++
+          }
+        }
+
+        // Step 6: Re-run compaction for already-at-risk goals (slots may have freed up)
+        const { data: atRiskGoals } = await supabase
+          .from('goals')
+          .select('id, end_date')
+          .eq('user_id', userId)
+          .eq('is_at_risk', true)
+          .eq('status', 'active')
+          .not('id', 'in', goalsWithNewMisses.length > 0 ? `(${goalsWithNewMisses.map(id => `'${id}'`).join(',')})` : '(null)')
+
+        if ((atRiskGoals ?? []).length > 0) {
+          log(`Re-running compaction for at-risk goals`, { count: atRiskGoals!.length })
+
+          for (const goalRow of atRiskGoals!) {
+            const redistResult = await redistributeMissedStrategicTasks(
+              supabase,
+              userId,
+              goalRow.id,
+              goalRow.end_date,
+              tomorrow
+            )
+
+            result.tasksRescheduled += redistResult.rescheduled
+
+            if (!redistResult.isAtRisk) {
+              // Risk resolved — update DB
+              await supabase
+                .from('goals')
+                .update({ is_at_risk: false })
+                .eq('id', goalRow.id)
+
+              log(`Goal at-risk status changed`, {
+                goalId: goalRow.id,
+                wasAtRisk: true,
+                isAtRisk: false,
+              })
+            } else {
+              result.goalsAtRisk++
+            }
+          }
+        }
+
+        // Step 7: Run daily planner for tomorrow
         const { data: tomorrowTasks } = await supabase
           .from('tasks')
           .select()
@@ -183,7 +444,6 @@ Deno.serve(async (req: Request) => {
         })
 
         // Planner agent is invoked via the Next.js API route (cannot import Node modules in Deno edge)
-        // The actual Anthropic SDK call happens in /api/agents/daily-planner
         result.tasksPlanned += tomorrowTasks?.length ?? 0
         result.usersProcessed++
 
@@ -198,7 +458,7 @@ Deno.serve(async (req: Request) => {
     result.durationMs = Date.now() - runStart
 
     log(
-      `Complete. Users=${result.usersProcessed}, Tasks=${result.tasksPlanned}, GoalsFailed=${result.goalsFailed}, Duration=${result.durationMs}ms`
+      `Complete. Users=${result.usersProcessed}, Tasks=${result.tasksPlanned}, GoalsFailed=${result.goalsFailed}, Rescheduled=${result.tasksRescheduled}, AtRisk=${result.goalsAtRisk}, Duration=${result.durationMs}ms`
     )
 
     return new Response(JSON.stringify(result), {

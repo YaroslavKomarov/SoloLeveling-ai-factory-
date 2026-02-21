@@ -124,6 +124,8 @@ export interface GoalRow {
   end_date: string     // always start_date + 90 days
   failed_at: string | null
   failure_reason: string | null
+  is_at_risk: boolean
+  failure_acknowledged: boolean
   created_at: string
   updated_at: string
 }

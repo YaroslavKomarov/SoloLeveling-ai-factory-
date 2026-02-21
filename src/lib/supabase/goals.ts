@@ -275,6 +275,83 @@ export async function clearDialogMessages(
   logger.debug('dialog messages cleared', { userId, sphereId })
 }
 
+// =============================================================
+// Phase 4: Adaptation helpers
+// =============================================================
+
+/**
+ * Sets or clears the is_at_risk flag on a goal.
+ */
+export async function updateGoalRiskStatus(
+  supabase: DB,
+  goalId: string,
+  isAtRisk: boolean
+): Promise<void> {
+  logger.debug('updateGoalRiskStatus', { goalId, isAtRisk })
+
+  const { error } = await supabase
+    .from('goals')
+    .update({ is_at_risk: isAtRisk })
+    .eq('id', goalId)
+
+  if (error) {
+    logger.error('updateGoalRiskStatus failed', { goalId, isAtRisk, error: error.message })
+    throw new Error(`updateGoalRiskStatus: ${error.message}`)
+  }
+
+  logger.info('Goal risk status updated', { goalId, isAtRisk })
+}
+
+/**
+ * Returns all goals for a user that have status='failed' and failure_acknowledged=false.
+ */
+export async function getFailedUnacknowledgedGoals(
+  supabase: DB,
+  userId: string
+): Promise<GoalRow[]> {
+  logger.debug('Fetching unacknowledged failed goals', { userId })
+
+  const { data, error } = await supabase
+    .from('goals')
+    .select()
+    .eq('user_id', userId)
+    .eq('status', 'failed')
+    .eq('failure_acknowledged', false)
+    .order('failed_at', { ascending: false })
+
+  if (error) {
+    logger.error('getFailedUnacknowledgedGoals failed', { userId, error: error.message })
+    throw new Error(`getFailedUnacknowledgedGoals: ${error.message}`)
+  }
+
+  logger.debug('getFailedUnacknowledgedGoals result', { userId, count: data.length })
+  return data
+}
+
+/**
+ * Marks a goal's failure as acknowledged by the user.
+ */
+export async function acknowledgeGoalFailure(
+  supabase: DB,
+  goalId: string
+): Promise<void> {
+  logger.debug('acknowledgeGoalFailure', { goalId })
+
+  const { error } = await supabase
+    .from('goals')
+    .update({ failure_acknowledged: true })
+    .eq('id', goalId)
+
+  if (error) {
+    logger.error('acknowledgeGoalFailure failed', { goalId, error: error.message })
+    throw new Error(`acknowledgeGoalFailure: ${error.message}`)
+  }
+
+  logger.info('Goal failure acknowledged', { goalId })
+}
+
+// =============================================================
+
 /**
  * Replace all existing messages for a sphere with a single rolling summary entry.
  * Prevents context window overflow during long goal creation dialogs.
