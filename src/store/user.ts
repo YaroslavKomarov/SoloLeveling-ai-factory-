@@ -21,8 +21,8 @@ export interface UserState {
   setUser: (data: Partial<Omit<UserState, 'setUser' | 'setFatigue' | 'addXp' | 'incrementFatigue' | 'setXp'>>) => void
   setFatigue: (fatigue: Partial<FatigueState>) => void
   addXp: (amount: number) => void
-  /** Optimistic fatigue increment: adds delta to all three fatigue types (capped at 100) */
-  incrementFatigue: (delta: number) => void
+  /** Optimistic fatigue increment: adds delta to the specified fatigue type only (capped at 100) */
+  incrementFatigue: (delta: number, type: 'physical' | 'emotional' | 'intellectual') => void
   /** Sync XP and level from server response after task completion */
   setXp: (xp: number, level: number) => void
 }
@@ -61,14 +61,14 @@ export const useUserStore = create<UserState>((set) => ({
       return { xp: newXp }
     }),
 
-  incrementFatigue: (delta) =>
+  incrementFatigue: (delta, type) =>
     set((state) => {
       const newFatigue = {
-        physical: Math.min(100, state.fatigue.physical + delta),
-        emotional: Math.min(100, state.fatigue.emotional + delta),
-        intellectual: Math.min(100, state.fatigue.intellectual + delta),
+        physical:     Math.min(100, state.fatigue.physical     + (type === 'physical'     ? delta : 0)),
+        emotional:    Math.min(100, state.fatigue.emotional    + (type === 'emotional'    ? delta : 0)),
+        intellectual: Math.min(100, state.fatigue.intellectual + (type === 'intellectual' ? delta : 0)),
       }
-      logger.debug('Fatigue updated', { delta, newFatigue })
+      logger.debug('Fatigue updated', { delta, type, newFatigue })
       return { fatigue: newFatigue }
     }),
 

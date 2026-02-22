@@ -1,40 +1,115 @@
+/**
+ * Dashboard — Command Center (Server Component).
+ * Fetches all data in parallel and passes to sub-components.
+ */
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { getTasksByDate, getDailyFatigue, getTasksByDateRange } from '@/lib/supabase/tasks'
 import { getGoalsByUser } from '@/lib/supabase/goals'
-import { getTasksByDate } from '@/lib/supabase/tasks'
+import { getSpheresByUser } from '@/lib/supabase/spheres'
+import { getCurrentRetro } from '@/lib/supabase/retrospectives'
+import { computeDashboardStats } from '@/lib/services/dashboard-stats'
+import { PlayerHeader } from '@/components/dashboard/PlayerHeader'
+import { TodayMissionCard } from '@/components/dashboard/TodayMissionCard'
+import { ActiveGoalsCard } from '@/components/dashboard/ActiveGoalsCard'
+import { WeeklyStatsCard } from '@/components/dashboard/WeeklyStatsCard'
+import { RetrospectiveAlertCard } from '@/components/dashboard/RetrospectiveAlertCard'
 import { createLogger } from '@/lib/logger'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 
 const logger = createLogger('dashboard/page')
 
-const comingFeatures = [
-  { phase: 3, label: 'Daily Execution', desc: 'Task execution, XP, level-up, fatigue' },
-  { phase: 4, label: 'Adaptation', desc: 'Skip detection, task redistribution' },
-  { phase: 5, label: 'Retrospectives', desc: 'Weekly analysis, pattern detection' },
-  { phase: 6, label: 'Knowledge Base', desc: 'Markdown editor, RAG, graph view' },
-  { phase: 7, label: 'Polish', desc: 'Skill tree, PWA, notifications' },
-]
+/**
+ * Returns the Monday (weekStart) and Sunday (weekEnd) of the ISO week
+ * that contains the given date string ('YYYY-MM-DD').
+ */
+function getCurrentWeekRange(today: string): { weekStart: string; weekEnd: string } {
+  const d = new Date(today + 'T00:00:00Z')
+  const day = d.getUTCDay() // 0 = Sunday, 1 = Monday … 6 = Saturday
+  const diffToMonday = day === 0 ? -6 : 1 - day
+  const monday = new Date(d)
+  monday.setUTCDate(d.getUTCDate() + diffToMonday)
+  const sunday = new Date(monday)
+  sunday.setUTCDate(monday.getUTCDate() + 6)
+  return {
+    weekStart: monday.toISOString().slice(0, 10),
+    weekEnd: sunday.toISOString().slice(0, 10),
+  }
+}
 
 export default async function DashboardPage() {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   if (!user) redirect('/login')
 
   const today = new Date().toISOString().slice(0, 10)
+  const { weekStart, weekEnd } = getCurrentWeekRange(today)
 
-  const [activeGoals, todayTasks] = await Promise.all([
-    getGoalsByUser(supabase, user.id, 'active'),
+  logger.debug('DashboardPage loading', { userId: user.id, today, weekStart, weekEnd })
+
+  // Fetch user profile + all dashboard data in parallel
+  const [
+    profileResult,
+    todayTasks,
+    weekTasks,
+    fatigue,
+    activeGoals,
+    spheres,
+    pendingRetro,
+  ] = await Promise.all([
+    supabase
+      .from('users')
+      .select('level, xp, display_name')
+      .eq('id', user.id)
+      .maybeSingle(),
     getTasksByDate(supabase, user.id, today),
+    getTasksByDateRange(supabase, user.id, weekStart, weekEnd),
+    getDailyFatigue(supabase, user.id, today),
+    getGoalsByUser(supabase, user.id, 'active'),
+    getSpheresByUser(supabase, user.id),
+    getCurrentRetro(supabase, user.id),
   ])
 
-  const scheduledToday = todayTasks.filter(t => t.status === 'scheduled')
-  const nextTask = scheduledToday[0]
+  const level = profileResult.data?.level ?? 1
+  const xp = profileResult.data?.xp ?? 0
+  const xpToNext = Math.floor(100 * Math.pow(level, 1.5))
+  const displayName = profileResult.data?.display_name ?? null
 
-  logger.debug('dashboard loaded', { userId: user.id, activeGoalCount: activeGoals.length, todayTaskCount: scheduledToday.length })
+  logger.debug('dashboard data fetched', {
+    userId: user.id,
+    level,
+    xp,
+    todayTaskCount: todayTasks.length,
+    weekTaskCount: weekTasks.length,
+    hasFatigue: !!fatigue,
+    activeGoalCount: activeGoals.length,
+    sphereCount: spheres.length,
+    hasPendingRetro: !!pendingRetro,
+    pendingRetroId: pendingRetro?.id ?? null,
+  })
+
+  const stats = computeDashboardStats(
+    todayTasks,
+    weekTasks,
+    activeGoals,
+    spheres,
+    fatigue,
+    today
+  )
+
+  logger.debug('dashboard stats computed', {
+    weeklyXpEarned: stats.weeklyXpEarned,
+    weeklyTasksCompleted: stats.weeklyTasksCompleted,
+    currentStreak: stats.currentStreak,
+    goalStatsCount: stats.goalStats.length,
+    nextTask: stats.nextTask?.title ?? null,
+  })
 
   return (
     <div style={{ padding: '2rem 0' }}>
+      {/* Page heading */}
       <h1
         style={{
           fontFamily: 'Cinzel, serif',
@@ -47,7 +122,7 @@ export default async function DashboardPage() {
           marginBottom: '0.5rem',
         }}
       >
-        Dashboard
+        Command Center
       </h1>
       <p
         style={{
@@ -59,95 +134,50 @@ export default async function DashboardPage() {
           marginBottom: '2.5rem',
         }}
       >
-        Phase 2 — Goal Management
+        Your mission at a glance
       </p>
 
-      {/* Active goals stat card */}
-      <Card style={{ marginBottom: '2rem' }}>
-        <CardHeader>
-          <CardTitle>Active Goals</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem', marginBottom: '0.75rem' }}>
-            <span style={{ fontFamily: 'Orbitron, monospace', fontSize: '2.5rem', color: '#ffffff' }}>
-              {activeGoals.length}
-            </span>
-            <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '1rem', color: 'rgba(255,255,255,0.4)' }}>
-              goal{activeGoals.length !== 1 ? 's' : ''} in progress
-            </span>
-          </div>
-          {nextTask ? (
-            <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: 'rgba(255,255,255,0.6)', margin: 0 }}>
-              Next task today:{' '}
-              <span style={{ color: '#ffffff' }}>{nextTask.title}</span>
-              <span style={{ color: 'rgba(255,255,255,0.3)', marginLeft: '0.5rem' }}>
-                +{nextTask.xp_reward} XP
-              </span>
-            </p>
-          ) : activeGoals.length > 0 ? (
-            <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: 'rgba(255,255,255,0.4)', margin: 0, fontStyle: 'italic' }}>
-              No tasks scheduled for today.
-            </p>
-          ) : (
-            <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: 'rgba(255,255,255,0.4)', margin: 0, fontStyle: 'italic' }}>
-              No active goals. Visit Spheres to create your first 90-day goal.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+      {/* Retrospective alert — shown first so it catches the eye */}
+      {pendingRetro && (
+        <RetrospectiveAlertCard
+          retroId={pendingRetro.id}
+          weekStart={pendingRetro.week_start}
+        />
+      )}
 
-      {/* Coming phases */}
+      {/* Player XP / level hero section */}
+      <PlayerHeader
+        displayName={displayName}
+        level={level}
+        xp={xp}
+        xpToNext={xpToNext}
+      />
+
+      {/* Two-column responsive grid for Today + Weekly */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-          gap: '1rem',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: '1.5rem',
         }}
       >
-        {comingFeatures.map((feature) => (
-          <div
-            key={feature.phase}
-            style={{
-              padding: '1rem',
-              border: '1px solid rgba(255, 255, 255, 0.05)',
-              borderRadius: 0,
-              opacity: 0.4,
-            }}
-          >
-            <div
-              style={{
-                fontFamily: 'Orbitron, monospace',
-                fontSize: '0.625rem',
-                color: 'rgba(255, 255, 255, 0.3)',
-                letterSpacing: '0.1em',
-                marginBottom: '0.375rem',
-              }}
-            >
-              PHASE {feature.phase}
-            </div>
-            <div
-              style={{
-                fontFamily: 'Cinzel, serif',
-                fontSize: '0.75rem',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                color: 'rgba(255, 255, 255, 0.5)',
-                marginBottom: '0.25rem',
-              }}
-            >
-              {feature.label}
-            </div>
-            <div
-              style={{
-                fontFamily: 'Cormorant, serif',
-                fontSize: '0.875rem',
-                color: 'rgba(255, 255, 255, 0.3)',
-              }}
-            >
-              {feature.desc}
-            </div>
-          </div>
-        ))}
+        <TodayMissionCard
+          totalTasks={stats.totalTodayTasks}
+          completedTasks={stats.completedTodayTasks}
+          skippedTasks={stats.skippedTodayTasks}
+          nextTask={stats.nextTask}
+          fatigue={stats.fatigue}
+        />
+        <WeeklyStatsCard
+          xpEarned={stats.weeklyXpEarned}
+          tasksCompleted={stats.weeklyTasksCompleted}
+          streak={stats.currentStreak}
+        />
+      </div>
+
+      {/* Active goals — full width below */}
+      <div style={{ marginTop: '1.5rem' }}>
+        <ActiveGoalsCard goalStats={stats.goalStats} />
       </div>
     </div>
   )

@@ -66,6 +66,7 @@ export async function getTasksByDate(
     .select()
     .eq('user_id', userId)
     .eq('scheduled_date', date)
+    .neq('status', 'cancelled')
     .order('created_at')
 
   if (error) {
@@ -74,6 +75,31 @@ export async function getTasksByDate(
   }
 
   logger.debug('getTasksByDate result', { userId, date, count: data.length })
+  return data
+}
+
+export async function getTasksByDateRange(
+  supabase: DB,
+  userId: string,
+  startDate: string,
+  endDate: string
+): Promise<TaskRow[]> {
+  logger.debug('getTasksByDateRange', { userId, startDate, endDate })
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .select()
+    .eq('user_id', userId)
+    .gte('scheduled_date', startDate)
+    .lte('scheduled_date', endDate)
+    .order('scheduled_date')
+
+  if (error) {
+    logger.error('getTasksByDateRange failed', { userId, startDate, endDate, error: error.message })
+    throw new Error(`getTasksByDateRange: ${error.message}`)
+  }
+
+  logger.debug('getTasksByDateRange result', { userId, startDate, endDate, count: data.length })
   return data
 }
 

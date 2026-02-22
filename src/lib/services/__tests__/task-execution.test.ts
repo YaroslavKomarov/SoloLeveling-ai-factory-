@@ -34,6 +34,7 @@ function makeMockTask(overrides: Partial<TaskRow> = {}): TaskRow {
     completed_at: null,
     xp_reward: 50,
     fatigue_cost: 4,
+    fatigue_type: 'intellectual' as const,
     repetition_index: 1,
     consecutive_skips: 0,
     total_skips: 0,
