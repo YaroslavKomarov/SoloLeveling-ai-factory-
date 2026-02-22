@@ -124,8 +124,7 @@ export interface GoalPlanResult {
  *
  * Regular tasks: Ebbinghaus spacing, starting on evenly distributed first-days.
  * Strategic tasks: evenly distributed across 90 days.
- * Fatigue projection: all tasks logged as "intellectual" in Phase 2
- * (per-type assignment deferred to Phase 3 daily-planner agent).
+ * Fatigue projection: per quest fatigueType (physical / emotional / intellectual).
  */
 export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
   const { goalType, startDate, quests, tasksPerQuest, existingDailyFatigue } = input
@@ -156,8 +155,9 @@ export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
   for (let qi = 0; qi < quests.length; qi++) {
     const quest = quests[qi]
     const counts = tasksPerQuest[qi] ?? { regular: 2, strategic: 1 }
+    const ft = quest.fatigueType ?? 'intellectual'
 
-    logger.debug('processing quest', { questIndex: qi, title: quest.title, regular: counts.regular, strategic: counts.strategic })
+    logger.debug('processing quest', { questIndex: qi, title: quest.title, regular: counts.regular, strategic: counts.strategic, fatigueType: ft })
 
     // --- Regular tasks ---
     if (counts.regular > 0) {
@@ -180,11 +180,12 @@ export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
             scheduledDate: date,
             xpReward: XP_REGULAR,
             fatigueCost: FATIGUE_REGULAR,
+            fatigueType: ft,
             repetitionIndex: di,  // 0-6 Ebbinghaus index
           })
 
           const day = ensureDay(date)
-          day.intellectual += FATIGUE_REGULAR
+          day[ft] += FATIGUE_REGULAR
           day.taskCount += 1
         }
       }
@@ -207,11 +208,12 @@ export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
           scheduledDate: date,
           xpReward: XP_STRATEGIC,
           fatigueCost: FATIGUE_STRATEGIC,
+          fatigueType: ft,
           sequenceIndex: si,
         })
 
         const day = ensureDay(date)
-        day.intellectual += FATIGUE_STRATEGIC
+        day[ft] += FATIGUE_STRATEGIC
         day.taskCount += 1
       }
     }

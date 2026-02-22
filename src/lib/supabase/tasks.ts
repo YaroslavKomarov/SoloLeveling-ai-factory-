@@ -66,6 +66,7 @@ export async function getTasksByDate(
     .select()
     .eq('user_id', userId)
     .eq('scheduled_date', date)
+    .neq('status', 'cancelled')
     .order('created_at')
 
   if (error) {

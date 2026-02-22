@@ -37,11 +37,10 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
   const task = todaysTasks.find((t) => t.id === initialTask.id) ?? initialTask
   const fatigueCost = task.task_type === 'strategic' ? STRATEGIC_FATIGUE_COST : REGULAR_FATIGUE_COST
 
-  // Check if completing this task would breach the soft fatigue limit
-  const wouldBreachFatigue =
-    userFatigue.physical + fatigueCost >= FATIGUE_SOFT_LIMIT ||
-    userFatigue.emotional + fatigueCost >= FATIGUE_SOFT_LIMIT ||
-    userFatigue.intellectual + fatigueCost >= FATIGUE_SOFT_LIMIT
+  const fatigueType = task.fatigue_type
+
+  // Check if completing this task would breach the soft fatigue limit (only for the relevant bar)
+  const wouldBreachFatigue = userFatigue[fatigueType] + fatigueCost >= FATIGUE_SOFT_LIMIT
 
   const isCompleted = task.status === 'completed'
   const isSkipped = task.status === 'skipped'
@@ -57,7 +56,7 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
 
     // Optimistic update
     updateTask(task.id, { status: 'completed' })
-    incrementFatigue(fatigueCost)
+    incrementFatigue(fatigueCost, fatigueType)
     setIsLoading(true)
     setErrorMsg(null)
 
@@ -89,7 +88,7 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
 
       // Revert optimistic update
       updateTask(task.id, { status: 'scheduled' })
-      incrementFatigue(-fatigueCost)
+      incrementFatigue(-fatigueCost, fatigueType)
       setErrorMsg(msg)
     } finally {
       setIsLoading(false)

@@ -91,6 +91,7 @@ export async function POST(request: NextRequest) {
       scheduled_date: t.scheduledDate,
       xp_reward: t.xpReward,
       fatigue_cost: t.fatigueCost,
+      fatigue_type: t.fatigueType ?? 'intellectual',
       repetition_index: t.repetitionIndex ?? null,
       sequence_index: t.sequenceIndex ?? null,
     }))

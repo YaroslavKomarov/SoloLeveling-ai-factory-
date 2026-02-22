@@ -101,12 +101,14 @@ export async function completeTask(
     intellectual: 0,
   }
 
-  // Step 6: Add fatigue delta to all three types (cap at 100)
-  const newPhysical = Math.min(100, currentFatigue.physical + fatigueDelta)
-  const newEmotional = Math.min(100, currentFatigue.emotional + fatigueDelta)
-  const newIntellectual = Math.min(100, currentFatigue.intellectual + fatigueDelta)
+  // Step 6: Add fatigue delta only to the task's specific fatigue type (cap at 100)
+  const ft = task.fatigue_type
+  const newPhysical     = Math.min(100, currentFatigue.physical     + (ft === 'physical'     ? fatigueDelta : 0))
+  const newEmotional    = Math.min(100, currentFatigue.emotional    + (ft === 'emotional'    ? fatigueDelta : 0))
+  const newIntellectual = Math.min(100, currentFatigue.intellectual + (ft === 'intellectual' ? fatigueDelta : 0))
 
   logger.debug('Step 6: Fatigue update', {
+    fatigueType: ft,
     physical: `${currentFatigue.physical} → ${newPhysical}`,
     emotional: `${currentFatigue.emotional} → ${newEmotional}`,
     intellectual: `${currentFatigue.intellectual} → ${newIntellectual}`,

@@ -31,6 +31,7 @@ function makeStrategicTask(overrides: Partial<TaskRow> = {}): TaskRow {
     completed_at: null,
     xp_reward: 100,
     fatigue_cost: 6,
+    fatigue_type: 'intellectual' as const,
     repetition_index: null,
     consecutive_skips: 0,
     total_skips: 0,

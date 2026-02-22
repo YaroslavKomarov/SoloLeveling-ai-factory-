@@ -166,6 +166,7 @@ export type QuestUpdate = Partial<Omit<QuestRow, 'id' | 'goal_id' | 'user_id' | 
 
 export type TaskType = 'regular' | 'strategic'
 export type TaskStatus = 'scheduled' | 'completed' | 'skipped' | 'cancelled'
+export type FatigueType = 'physical' | 'emotional' | 'intellectual'
 
 export interface TaskRow {
   id: string
@@ -179,6 +180,7 @@ export interface TaskRow {
   completed_at: string | null
   xp_reward: number
   fatigue_cost: number
+  fatigue_type: FatigueType  // which fatigue bar this task affects
   repetition_index: number | null   // Ebbinghaus index (regular only)
   consecutive_skips: number
   total_skips: number
@@ -195,6 +197,7 @@ export type TaskInsert = Omit<TaskRow, 'id' | 'created_at' | 'updated_at'> & {
   completed_at?: string | null
   xp_reward?: number
   fatigue_cost?: number
+  fatigue_type?: FatigueType
   repetition_index?: number | null
   consecutive_skips?: number
   total_skips?: number
@@ -257,6 +260,7 @@ export interface QuestDraft {
   targetValue: number
   unit: string
   orderIndex: number
+  fatigueType?: FatigueType  // which fatigue bar tasks in this quest affect
 }
 
 /** One entry in the 90-day task plan (pre-insert) */
@@ -267,6 +271,7 @@ export interface TaskPlanEntry {
   scheduledDate: string      // ISO date string YYYY-MM-DD
   xpReward: number
   fatigueCost: number
+  fatigueType?: FatigueType  // which bar to affect; defaults to 'intellectual' if omitted
   repetitionIndex?: number   // regular tasks only
   sequenceIndex?: number     // strategic tasks only
 }

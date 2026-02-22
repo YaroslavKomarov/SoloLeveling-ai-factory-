@@ -70,6 +70,13 @@ export const generateQuests = tool({
           strategicTaskCount: z.number().int().min(0).max(8).describe(
             'Number of strategic task sessions (unique deep-work sessions) for this quest. 0–8.'
           ),
+          fatigueType: z.enum(['physical', 'emotional', 'intellectual']).describe(
+            'Which fatigue bar completing tasks in this quest affects. ' +
+            '"physical" — body-based habits (workouts, sleep routines, stretching, cooking); ' +
+            '"emotional" — social/emotional work (journaling, therapy, relationships, mindfulness); ' +
+            '"intellectual" — mental/cognitive work (studying, coding, reading, analysis). ' +
+            'Choose the type that best matches what the user will actually do.'
+          ),
           regularTaskTitle: z.string().describe(
             'Short repeatable action title for the regular task, e.g. "Practice Python exercises". ' +
             'Empty string if regularTaskCount is 0.'
