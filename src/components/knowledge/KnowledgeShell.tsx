@@ -31,29 +31,29 @@ interface KnowledgeShellProps {
 }
 
 export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
-  const {
-    notes,
-    selectedNote,
-    selectedNoteId,
-    isEditing,
-    setNotes,
-    selectNote,
-    setIsEditing,
-    createNote,
-  } = useKnowledgeStore((state) => ({
-    notes: state.notes,
-    selectedNote: state.selectedNote,
-    selectedNoteId: state.selectedNoteId,
-    isEditing: state.isEditing,
-    setNotes: state.setNotes,
-    selectNote: state.selectNote,
-    setIsEditing: state.setIsEditing,
-    createNote: state.createNote,
-  }))
+  // Split into individual primitive selectors to avoid Zustand object-selector
+  // infinite loop: inline `(s) => ({ ... })` creates a new object on every call,
+  // Zustand's getSnapshot always sees "changed" state → infinite re-render.
+  // See patch: 2026-02-20-zustand-object-selector-loop.md
+  const notes = useKnowledgeStore((s) => s.notes)
+  const selectedNote = useKnowledgeStore((s) => s.selectedNote)
+  const selectedNoteId = useKnowledgeStore((s) => s.selectedNoteId)
+  const isEditing = useKnowledgeStore((s) => s.isEditing)
+  const setNotes = useKnowledgeStore((s) => s.setNotes)
+  const selectNote = useKnowledgeStore((s) => s.selectNote)
+  const setIsEditing = useKnowledgeStore((s) => s.setIsEditing)
+  const createNote = useKnowledgeStore((s) => s.createNote)
 
   const [isCreating, setIsCreating] = useState(false)
   const [newNoteTitle, setNewNoteTitle] = useState('')
   const [newNotePath, setNewNotePath] = useState('')
+
+  // [FIX:T01] Log mount to confirm no infinite loop regression
+  useEffect(() => {
+    logger.debug('[FIX:T01] KnowledgeShell mounted — split selectors active', {
+      initialNoteCount: initialNotes.length,
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Hydrate store from server-rendered notes
   useEffect(() => {

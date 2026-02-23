@@ -14,26 +14,25 @@ import { createLogger } from '@/lib/logger'
 const logger = createLogger('RagChatPanel')
 
 export function RagChatPanel() {
-  const {
-    chatMessages,
-    isChatLoading,
-    addChatMessage,
-    setChatMessages,
-    setIsChatLoading,
-    clearChat,
-  } = useKnowledgeStore((state) => ({
-    chatMessages: state.chatMessages,
-    isChatLoading: state.isChatLoading,
-    addChatMessage: state.addChatMessage,
-    setChatMessages: state.setChatMessages,
-    setIsChatLoading: state.setIsChatLoading,
-    clearChat: state.clearChat,
-  }))
+  // [FIX:T01] Split into individual selectors to avoid Zustand getSnapshot infinite loop.
+  // Inline object selector `(s) => ({ ... })` creates a new object on every call,
+  // causing React to detect "state change" → infinite re-render.
+  const chatMessages = useKnowledgeStore((s) => s.chatMessages)
+  const isChatLoading = useKnowledgeStore((s) => s.isChatLoading)
+  const addChatMessage = useKnowledgeStore((s) => s.addChatMessage)
+  const setChatMessages = useKnowledgeStore((s) => s.setChatMessages)
+  const setIsChatLoading = useKnowledgeStore((s) => s.setIsChatLoading)
+  const clearChat = useKnowledgeStore((s) => s.clearChat)
 
   const [inputValue, setInputValue] = useState('')
   const [streamingMessage, setStreamingMessage] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // [FIX:T01] Log mount to confirm no infinite loop regression
+  useEffect(() => {
+    logger.debug('[FIX:T01] RagChatPanel mounted — split selectors active')
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to bottom when new messages appear
   useEffect(() => {

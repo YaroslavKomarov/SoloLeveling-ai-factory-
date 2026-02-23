@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -47,6 +48,11 @@ export function CreateSphereModal({ isOpen, onClose, userId }: CreateSphereModal
   const addSphere = useGoalsStore(s => s.addSphere)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const {
     register,
@@ -93,7 +99,9 @@ export function CreateSphereModal({ isOpen, onClose, userId }: CreateSphereModal
     }
   }
 
-  return (
+  if (!mounted) return null
+
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <>
@@ -113,13 +121,8 @@ export function CreateSphereModal({ isOpen, onClose, userId }: CreateSphereModal
             }}
           />
 
-          {/* Modal */}
-          <motion.div
-            key="modal"
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 16 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
+          {/* Modal — outer div handles centering, inner motion.div handles animation */}
+          <div
             style={{
               position: 'fixed',
               top: '50%',
@@ -127,10 +130,19 @@ export function CreateSphereModal({ isOpen, onClose, userId }: CreateSphereModal
               transform: 'translate(-50%, -50%)',
               width: '90%',
               maxWidth: '480px',
+              zIndex: 50,
+            }}
+          >
+          <motion.div
+            key="modal"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            style={{
               backgroundColor: 'rgba(10, 12, 16, 0.97)',
               border: '1px solid rgba(255,255,255,0.15)',
               padding: '1.75rem',
-              zIndex: 50,
               display: 'flex',
               flexDirection: 'column',
               gap: '1.25rem',
@@ -238,8 +250,10 @@ export function CreateSphereModal({ isOpen, onClose, userId }: CreateSphereModal
               </div>
             </form>
           </motion.div>
+          </div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }

@@ -7,7 +7,8 @@ import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('StrategicDialog')
 
-const MIN_NOTE_LENGTH = 50
+const MIN_CHAR_COUNT = 50
+const MIN_WORD_COUNT = 8
 
 interface StrategicExecutionDialogProps {
   task: TaskRow
@@ -25,9 +26,12 @@ export function StrategicExecutionDialog({
   logger.debug('Dialog opened', { taskId: task.id })
 
   function handleSubmit() {
-    logger.debug(`Submitting note for task ${task.id}, length=${note.length}`)
-    if (note.trim().length < MIN_NOTE_LENGTH) return
-    onComplete(note.trim())
+    const trimmed = note.trim()
+    const charCount = trimmed.length
+    const wordCount = trimmed.split(/\s+/).filter(Boolean).length
+    logger.debug(`Submitting note for task ${task.id}`, { charCount, wordCount })
+    if (charCount < MIN_CHAR_COUNT || wordCount < MIN_WORD_COUNT) return
+    onComplete(trimmed)
   }
 
   function handleClose() {
@@ -35,8 +39,12 @@ export function StrategicExecutionDialog({
     onClose()
   }
 
-  const charCount = note.trim().length
-  const isReady = charCount >= MIN_NOTE_LENGTH
+  const trimmed = note.trim()
+  const charCount = trimmed.length
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length
+  const charReady = charCount >= MIN_CHAR_COUNT
+  const wordReady = wordCount >= MIN_WORD_COUNT
+  const isReady = charReady && wordReady
 
   return (
     <AnimatePresence>
@@ -137,11 +145,12 @@ export function StrategicExecutionDialog({
                 boxSizing: 'border-box',
               }}
             />
-            {/* Character counter */}
+            {/* Counters row */}
             <div
               style={{
                 display: 'flex',
                 justifyContent: 'flex-end',
+                gap: '1rem',
                 marginTop: '0.375rem',
               }}
             >
@@ -149,11 +158,21 @@ export function StrategicExecutionDialog({
                 style={{
                   fontFamily: 'Orbitron, monospace',
                   fontSize: '0.625rem',
-                  color: isReady ? 'rgba(255, 255, 255, 0.4)' : '#a855f7',
+                  color: wordReady ? 'rgba(255, 255, 255, 0.4)' : '#a855f7',
                   letterSpacing: '0.05em',
                 }}
               >
-                {charCount} / {MIN_NOTE_LENGTH} min
+                {wordCount} / {MIN_WORD_COUNT} words
+              </span>
+              <span
+                style={{
+                  fontFamily: 'Orbitron, monospace',
+                  fontSize: '0.625rem',
+                  color: charReady ? 'rgba(255, 255, 255, 0.4)' : '#a855f7',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                {charCount} / {MIN_CHAR_COUNT} chars
               </span>
             </div>
           </div>

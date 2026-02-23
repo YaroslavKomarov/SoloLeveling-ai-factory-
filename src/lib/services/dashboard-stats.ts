@@ -17,6 +17,10 @@ export interface GoalDashboardStat {
   weeklyCompletionRate: number
   weeklyCompleted: number
   weeklyTotal: number
+  /** 0–1: tasks completed (all-time) / total tasks in the 90-day plan (excl. cancelled) */
+  overallCompletionRate: number
+  overallCompleted: number
+  overallTotal: number
   isAtRisk: boolean
 }
 
@@ -43,12 +47,13 @@ export interface DashboardStats {
 /**
  * Compute all dashboard stats from pre-fetched data arrays.
  *
- * @param todayTasks  Tasks for today's date (already filtered by getTasksByDate — no cancelled)
- * @param weekTasks   All tasks for the current Mon–Sun week range
- * @param activeGoals Active goals for the user
- * @param spheres     All user spheres (for name mapping)
- * @param fatigue     Today's fatigue row, or null if no record yet
- * @param today       ISO date string 'YYYY-MM-DD'
+ * @param todayTasks    Tasks for today's date (already filtered by getTasksByDate — no cancelled)
+ * @param weekTasks     All tasks for the current Mon–Sun week range
+ * @param activeGoals   Active goals for the user
+ * @param spheres       All user spheres (for name mapping)
+ * @param fatigue       Today's fatigue row, or null if no record yet
+ * @param today         ISO date string 'YYYY-MM-DD'
+ * @param goalTaskStats Aggregate task counts per goal across the full 90-day plan (from getGoalTaskStats)
  */
 export function computeDashboardStats(
   todayTasks: TaskRow[],
@@ -56,7 +61,8 @@ export function computeDashboardStats(
   activeGoals: GoalRow[],
   spheres: SphereRow[],
   fatigue: DailyFatigueRow | null,
-  today: string
+  today: string,
+  goalTaskStats: Map<string, { completed: number; total: number }> = new Map()
 ): DashboardStats {
   logger.debug('computeDashboardStats START', {
     todayTaskCount: todayTasks.length,
@@ -114,22 +120,28 @@ export function computeDashboardStats(
   }
 
   const goalStats: GoalDashboardStat[] = activeGoals.map((goal) => {
-    const stats = goalStatsMap.get(goal.id) ?? { completed: 0, total: 0 }
+    const weekStats = goalStatsMap.get(goal.id) ?? { completed: 0, total: 0 }
+    const overallStats = goalTaskStats.get(goal.id) ?? { completed: 0, total: 0 }
+
     const daysRemaining = Math.max(
       0,
       Math.ceil(
         (new Date(goal.end_date + 'T00:00:00Z').getTime() - Date.now()) / 86_400_000
       )
     )
-    const weeklyCompletionRate = stats.total > 0 ? stats.completed / stats.total : 0
+    const weeklyCompletionRate = weekStats.total > 0 ? weekStats.completed / weekStats.total : 0
+    const overallCompletionRate = overallStats.total > 0 ? overallStats.completed / overallStats.total : 0
 
     logger.debug('goal stat', {
       goalId: goal.id,
       title: goal.title,
       daysRemaining,
-      weeklyCompleted: stats.completed,
-      weeklyTotal: stats.total,
+      weeklyCompleted: weekStats.completed,
+      weeklyTotal: weekStats.total,
       weeklyCompletionRate: Math.round(weeklyCompletionRate * 100) + '%',
+      overallCompleted: overallStats.completed,
+      overallTotal: overallStats.total,
+      overallCompletionRate: Math.round(overallCompletionRate * 100) + '%',
       isAtRisk: goal.is_at_risk,
       sphereId: goal.sphere_id,
       sphereName: sphereMap.get(goal.sphere_id) ?? 'Unknown',
@@ -141,8 +153,11 @@ export function computeDashboardStats(
       sphereName: sphereMap.get(goal.sphere_id) ?? 'Unknown',
       daysRemaining,
       weeklyCompletionRate,
-      weeklyCompleted: stats.completed,
-      weeklyTotal: stats.total,
+      weeklyCompleted: weekStats.completed,
+      weeklyTotal: weekStats.total,
+      overallCompletionRate,
+      overallCompleted: overallStats.completed,
+      overallTotal: overallStats.total,
       isAtRisk: goal.is_at_risk,
     }
   })
@@ -153,6 +168,11 @@ export function computeDashboardStats(
     return a.daysRemaining - b.daysRemaining
   })
 
+  const totalTasks = goalStats.reduce((s, g) => s + g.overallTotal, 0)
+  const completedTasks = goalStats.reduce((s, g) => s + g.overallCompleted, 0)
+  const progressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0
+
+  logger.debug('[FIX:T02] dashboardStats', { totalTasks, completedTasks, progressPct })
   logger.debug('computeDashboardStats COMPLETE', {
     nextTask: nextTask?.title ?? null,
     currentStreak,
@@ -160,6 +180,7 @@ export function computeDashboardStats(
     weeklyTasksCompleted,
     goalStatsCount: goalStats.length,
     atRiskCount: goalStats.filter((g) => g.isAtRisk).length,
+    overallProgressPct: progressPct,
   })
 
   return {

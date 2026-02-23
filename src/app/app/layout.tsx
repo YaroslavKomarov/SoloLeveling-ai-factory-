@@ -2,6 +2,7 @@ import { Navigation } from '@/components/layout/Navigation'
 import { UserPanel } from '@/components/layout/UserPanel'
 import { PageTransition } from '@/components/layout/PageTransition'
 import { LevelUpModal } from '@/components/ui/LevelUpModal'
+import { TimerProvider } from '@/components/layout/TimerProvider'
 import { NotificationPermissionBanner } from '@/components/ui/NotificationPermissionBanner'
 import { RetrospectiveGate } from '@/components/retrospective/RetrospectiveGate'
 import { createClient } from '@/lib/supabase/server'
@@ -18,6 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   let level = 1
   let xp = 0
   let xpToNext = 100
+  let displayName: string | null = null
 
   // Retrospective data (null = no active retro)
   let retroData: RetrospectiveRow | null = null
@@ -33,7 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     if (user) {
       const { data: profile } = await supabase
         .from('users')
-        .select('level, xp')
+        .select('level, xp, display_name')
         .eq('id', user.id)
         .maybeSingle()
 
@@ -41,6 +43,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         level = profile.level
         xp = profile.xp
         xpToNext = Math.floor(100 * Math.pow(level, 1.5))
+        displayName = profile.display_name ?? null
         logger.debug('user loaded', { userId: user.id, level, xp })
       }
 
@@ -88,6 +91,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <>
       <Navigation />
+      <TimerProvider />
       <NotificationPermissionBanner />
       <main
         style={{
@@ -105,6 +109,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             level={level}
             xp={xp}
             xpToNext={xpToNext}
+            displayName={displayName}
             fatigue={{ physical: 0, emotional: 0, intellectual: 0 }}
           />
           <PageTransition>{children}</PageTransition>

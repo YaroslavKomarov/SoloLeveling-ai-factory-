@@ -3,7 +3,13 @@
 import { ChevronUp, ChevronDown, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
-import type { QuestDraft } from '@/lib/supabase/types'
+import type { FatigueType, QuestDraft } from '@/lib/supabase/types'
+
+const FATIGUE_OPTIONS: { value: FatigueType; label: string }[] = [
+  { value: 'intellectual', label: '🧠 Интеллектуальная' },
+  { value: 'physical',     label: '💪 Физическая' },
+  { value: 'emotional',    label: '❤️ Эмоциональная' },
+]
 
 interface QuestEditorProps {
   quests: QuestDraft[]
@@ -24,20 +30,24 @@ export function QuestEditor({ quests, onChange }: QuestEditorProps) {
   const moveUp = (index: number) => {
     if (index === 0) return
     const updated = [...quests]
-    ;[updated[index - 1], updated[index]] = [updated[index], updated[index - 1]]
+    const tmp = updated[index - 1]!
+    updated[index - 1] = updated[index]!
+    updated[index] = tmp
     onChange(updated.map((q, i) => ({ ...q, orderIndex: i })))
   }
 
   const moveDown = (index: number) => {
     if (index === quests.length - 1) return
     const updated = [...quests]
-    ;[updated[index], updated[index + 1]] = [updated[index + 1], updated[index]]
+    const tmp = updated[index + 1]!
+    updated[index + 1] = updated[index]!
+    updated[index] = tmp
     onChange(updated.map((q, i) => ({ ...q, orderIndex: i })))
   }
 
   const addQuest = () => {
     if (!canAdd) return
-    onChange([...quests, { title: '', targetValue: 1, unit: '', orderIndex: quests.length }])
+    onChange([...quests, { title: '', targetValue: 1, unit: '', orderIndex: quests.length, fatigueType: 'intellectual' }])
   }
 
   const removeQuest = (index: number) => {
@@ -122,6 +132,32 @@ export function QuestEditor({ quests, onChange }: QuestEditorProps) {
               placeholder="Unit, e.g. exercises, chapters, kg"
               error={quest.unit.trim() === '' ? 'Unit is required' : undefined}
             />
+          </div>
+
+          {/* Fatigue type selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontFamily: 'Orbitron, monospace', fontSize: '0.65rem', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.35)', flexShrink: 0 }}>
+              УСТАЛОСТЬ
+            </span>
+            <select
+              value={quest.fatigueType ?? 'intellectual'}
+              onChange={(e) => update(index, 'fatigueType', e.target.value)}
+              style={{
+                flex: 1,
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: 'rgba(255,255,255,0.75)',
+                fontFamily: 'Cormorant, Georgia, serif',
+                fontSize: '0.875rem',
+                padding: '0.375rem 0.5rem',
+                outline: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              {FATIGUE_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
           </div>
         </div>
       ))}

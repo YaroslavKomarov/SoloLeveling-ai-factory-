@@ -8,7 +8,7 @@ import { createLogger } from '@/lib/logger'
 const logger = createLogger('Navigation')
 
 const navItems = [
-  { href: '/app/dashboard', label: 'Dashboard' },
+  { href: '/app/dashboard', label: 'Command Center' },
   { href: '/app/today', label: 'Today' },
   { href: '/app/goals', label: 'Skills Tree' },
   { href: '/app/knowledge', label: 'Knowledge' },

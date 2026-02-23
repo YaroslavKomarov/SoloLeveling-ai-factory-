@@ -834,7 +834,7 @@ Reference: START_PROJECT.md — SC-01 (onboarding), SC-02 (@me profile), SC-03 (
 
   Files: `src/test/auth/middleware.test.ts`, `src/test/calendar/encryption.test.ts`, `src/test/me-profile/initialize.test.ts`, `src/test/supabase/notes.test.ts`, `src/test/components/Button.test.tsx`
 
-- [ ] **Task 16: Update AGENTS.md with actual file structure**
+- [x] **Task 16: Update AGENTS.md with actual file structure**
 
   After all code is written, update AGENTS.md to reflect the real directory structure (not just planned).
 

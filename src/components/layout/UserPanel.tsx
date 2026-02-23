@@ -20,6 +20,7 @@ interface UserPanelProps {
   level?: number
   xp?: number
   xpToNext?: number
+  displayName?: string | null
   fatigue?: FatigueData
 }
 
@@ -27,15 +28,18 @@ interface UserPanelProps {
 function CornerBrackets({
   size = 12,
   color = 'rgba(255, 255, 255, 0.5)',
+  inset = false,
 }: {
   size?: number
   color?: string
+  inset?: boolean
 }) {
+  const o = inset ? 3 : -1
   const corners = [
-    { top: -1, left: -1, borderTop: `1px solid ${color}`, borderLeft: `1px solid ${color}` },
-    { top: -1, right: -1, borderTop: `1px solid ${color}`, borderRight: `1px solid ${color}` },
-    { bottom: -1, left: -1, borderBottom: `1px solid ${color}`, borderLeft: `1px solid ${color}` },
-    { bottom: -1, right: -1, borderBottom: `1px solid ${color}`, borderRight: `1px solid ${color}` },
+    { top: o, left: o, borderTop: `1px solid ${color}`, borderLeft: `1px solid ${color}` },
+    { top: o, right: o, borderTop: `1px solid ${color}`, borderRight: `1px solid ${color}` },
+    { bottom: o, left: o, borderBottom: `1px solid ${color}`, borderLeft: `1px solid ${color}` },
+    { bottom: o, right: o, borderBottom: `1px solid ${color}`, borderRight: `1px solid ${color}` },
   ]
 
   return (
@@ -60,6 +64,7 @@ export function UserPanel({
   level: initialLevel = 1,
   xp: initialXp = 0,
   xpToNext: initialXpToNext = 100,
+  displayName = null,
   fatigue: initialFatigue = { physical: 0, emotional: 0, intellectual: 0 },
 }: UserPanelProps) {
   const setUser = useUserStore((s) => s.setUser)
@@ -100,7 +105,7 @@ export function UserPanel({
 
   logger.debug('Fatigue updated', { fatigue })
 
-  const anyFatigueHigh = fatigue.physical >= 91 || fatigue.emotional >= 91 || fatigue.intellectual >= 91
+  const xpPercent = Math.round((xp / xpToNext) * 100)
 
   return (
     <aside
@@ -137,21 +142,33 @@ export function UserPanel({
             position: 'relative',
             width: '66px',
             height: '66px',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
+            border: '1px solid rgba(255, 255, 255, 0.6)',
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
+            textShadow: '0 0 12px rgba(255, 255, 255, 0.5)',
           }}
         >
-          <CornerBrackets size={11} color="rgba(255, 255, 255, 0.55)" />
+          <CornerBrackets size={8} color="rgba(255, 255, 255, 0.8)" inset />
           <span
             style={{
               fontFamily: 'Cinzel, serif',
-              fontSize: '1.625rem',
-              fontWeight: 500,
+              fontSize: '0.5rem',
+              letterSpacing: '0.15em',
+              textTransform: 'uppercase',
+              color: 'rgba(255, 255, 255, 0.5)',
+            }}
+          >
+            Level
+          </span>
+          <span
+            style={{
+              fontFamily: 'Orbitron, monospace',
+              fontSize: '1.5rem',
+              fontWeight: 700,
               color: '#ffffff',
-              textShadow: '0 0 12px rgba(255, 255, 255, 0.4)',
-              letterSpacing: 0,
+              lineHeight: 1,
             }}
           >
             {level}
@@ -171,81 +188,79 @@ export function UserPanel({
           minWidth: 0,
         }}
       >
-        {/* Row 1: Level text + XP bar + XP numbers */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', position: 'relative' }}>
-          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '0.125rem' }}>
-            <span
-              style={{
-                fontFamily: 'Cinzel, serif',
-                fontSize: '0.5625rem',
-                letterSpacing: '0.15em',
-                textTransform: 'uppercase',
-                color: 'rgba(255, 255, 255, 0.4)',
-              }}
-            >
-              Level
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <span
-                style={{
-                  fontFamily: 'Cinzel, serif',
-                  fontSize: '1rem',
-                  fontWeight: 400,
-                  letterSpacing: '0.05em',
-                  color: '#ffffff',
-                  textShadow: '0 0 6px rgba(255, 255, 255, 0.25)',
-                }}
-              >
-                Level {level}
-              </span>
-              {anyFatigueHigh && (
-                <AlertTriangle size={13} strokeWidth={1.5} style={{ color: '#ec4899', flexShrink: 0 }} />
-              )}
-            </div>
-          </div>
-
-          <div style={{ flex: 1, position: 'relative' }}>
-            <Progress value={xp} max={xpToNext} color="white" height="0.25rem" />
-
-            {/* XP floating toast */}
-            <AnimatePresence>
-              {xpToast !== null && (
-                <motion.span
-                  key="xp-toast"
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: -2 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.3 }}
-                  style={{
-                    position: 'absolute',
-                    top: '-1.25rem',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    fontFamily: 'Orbitron, monospace',
-                    fontSize: '0.6rem',
-                    color: '#ffffff',
-                    textShadow: '0 0 8px rgba(255, 255, 255, 0.6)',
-                    whiteSpace: 'nowrap',
-                    pointerEvents: 'none',
-                  }}
-                >
-                  +{xpToast} XP
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <span
+        {/* Row 0: Display name */}
+        {displayName && (
+          <p
             style={{
-              fontFamily: 'Orbitron, monospace',
-              fontSize: '0.6875rem',
-              color: 'rgba(255, 255, 255, 0.45)',
-              flexShrink: 0,
-              letterSpacing: '0.03em',
+              fontFamily: 'Cinzel, serif',
+              fontSize: '0.875rem',
+              fontWeight: 400,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: '#ffffff',
+              margin: 0,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
             }}
           >
-            {xp} / {xpToNext}
-          </span>
+            {displayName}
+          </p>
+        )}
+
+        {/* Row 1: XP bar + labels */}
+        <div style={{ position: 'relative' }}>
+          <Progress value={xp} max={xpToNext} color="white" height="0.375rem" />
+
+          {/* XP floating toast */}
+          <AnimatePresence>
+            {xpToast !== null && (
+              <motion.span
+                key="xp-toast"
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: -2 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3 }}
+                style={{
+                  position: 'absolute',
+                  top: '-1.25rem',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  fontFamily: 'Orbitron, monospace',
+                  fontSize: '0.6rem',
+                  color: '#ffffff',
+                  textShadow: '0 0 8px rgba(255, 255, 255, 0.6)',
+                  whiteSpace: 'nowrap',
+                  pointerEvents: 'none',
+                }}
+              >
+                +{xpToast} XP
+              </motion.span>
+            )}
+          </AnimatePresence>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.375rem' }}>
+            <span
+              style={{
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '0.6875rem',
+                color: 'rgba(255, 255, 255, 0.4)',
+                letterSpacing: '0.05em',
+              }}
+            >
+              {xp.toLocaleString()} / {xpToNext.toLocaleString()} XP
+            </span>
+            <span
+              style={{
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '0.6875rem',
+                color: 'rgba(255, 255, 255, 0.3)',
+                letterSpacing: '0.05em',
+              }}
+            >
+              {xpPercent}%
+            </span>
+          </div>
         </div>
 
         {/* Row 2: Fatigue bars */}
@@ -359,7 +374,7 @@ function AnimatedFatigueBar({
           <AlertTriangle
             size={10}
             strokeWidth={1.5}
-            title="High fatigue — task performance may suffer"
+            aria-label="High fatigue — task performance may suffer"
             style={{ color: textColor, flexShrink: 0 }}
           />
         )}
