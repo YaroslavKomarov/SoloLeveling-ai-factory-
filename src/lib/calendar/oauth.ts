@@ -6,7 +6,8 @@ import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('calendar/oauth')
 
-const SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+// calendar.events grants read + write access to events (superset of calendar.readonly)
+const SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 
@@ -100,4 +101,53 @@ export async function exchangeCodeForTokens(code: string): Promise<OAuthTokens> 
   })
 
   return tokens
+}
+
+/**
+ * Refreshes an expired access token using the stored refresh token.
+ */
+export async function refreshAccessToken(refreshToken: string): Promise<OAuthTokens> {
+  const clientId = process.env.GOOGLE_CLIENT_ID
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET
+
+  if (!clientId || !clientSecret) {
+    throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required')
+  }
+
+  logger.debug('refreshing access token')
+
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
+  })
+
+  if (!response.ok) {
+    const err = await response.text()
+    logger.error('token refresh failed', { status: response.status, body: err })
+    throw new Error(`Token refresh failed: ${response.status} ${err}`)
+  }
+
+  const data = await response.json() as {
+    access_token: string
+    expires_in: number
+    token_type: string
+  }
+
+  const expiresAt = new Date(Date.now() + data.expires_in * 1000).toISOString()
+
+  logger.info('access token refreshed', { expiresAt })
+
+  return {
+    access_token: data.access_token,
+    refresh_token: refreshToken, // refresh token doesn't change
+    expires_in: data.expires_in,
+    token_type: data.token_type,
+    expiresAt,
+  }
 }

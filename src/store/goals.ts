@@ -15,6 +15,7 @@ interface GoalsState {
   addSphere: (sphere: SphereRow) => void
   setGoals: (goals: GoalRow[]) => void
   addGoal: (goal: GoalRow) => void
+  updateGoal: (goalId: string, updates: Partial<GoalRow>) => void
   setQuests: (goalId: string, quests: QuestRow[]) => void
   updateQuestProgress: (questId: string, currentValue: number) => void
 }
@@ -34,6 +35,11 @@ export const useGoalsStore = create<GoalsState>((set) => ({
 
   addGoal: (goal) =>
     set((state) => ({ goals: [...state.goals, goal] })),
+
+  updateGoal: (goalId, updates) =>
+    set((state) => ({
+      goals: state.goals.map((g) => g.id === goalId ? { ...g, ...updates } : g),
+    })),
 
   setQuests: (goalId, quests) =>
     set((state) => ({

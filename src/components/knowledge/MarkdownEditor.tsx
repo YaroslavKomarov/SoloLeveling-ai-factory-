@@ -22,10 +22,9 @@ interface MarkdownEditorProps {
 }
 
 export function MarkdownEditor({ note }: MarkdownEditorProps) {
-  const { updateNoteContent, setIsSaving } = useKnowledgeStore((state) => ({
-    updateNoteContent: state.updateNoteContent,
-    setIsSaving: state.setIsSaving,
-  }))
+  // [FIX:T01] Split into individual selectors to avoid Zustand getSnapshot infinite loop.
+  const updateNoteContent = useKnowledgeStore((s) => s.updateNoteContent)
+  const setIsSaving = useKnowledgeStore((s) => s.setIsSaving)
 
   const [localContent, setLocalContent] = useState(note.content)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')

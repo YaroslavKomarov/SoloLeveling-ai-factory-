@@ -289,3 +289,59 @@ describe('computeDashboardStats — empty state', () => {
     expect(stats.fatigue).toEqual({ physical: 0, emotional: 0, intellectual: 0 })
   })
 })
+
+describe('computeDashboardStats — overall 90-day progress (T02 fix)', () => {
+  it('overallCompletionRate = completed / total from goalTaskStats', () => {
+    const goalTaskStats = new Map([['goal-1', { completed: 20, total: 100 }]])
+    const stats = computeDashboardStats([], [], [GOAL], [SPHERE], null, TODAY, goalTaskStats)
+    const [goalStat] = stats.goalStats
+    if (!goalStat) throw new Error('Expected goalStat')
+    expect(goalStat.overallCompleted).toBe(20)
+    expect(goalStat.overallTotal).toBe(100)
+    expect(goalStat.overallCompletionRate).toBeCloseTo(0.2)
+  })
+
+  it('overallCompletionRate=0 when overallTotal=0 (no division by zero)', () => {
+    const goalTaskStats = new Map([['goal-1', { completed: 0, total: 0 }]])
+    const stats = computeDashboardStats([], [], [GOAL], [SPHERE], null, TODAY, goalTaskStats)
+    const [goalStat] = stats.goalStats
+    if (!goalStat) throw new Error('Expected goalStat')
+    expect(goalStat.overallCompletionRate).toBe(0)
+  })
+
+  it('overallCompletionRate=1.0 when all tasks completed', () => {
+    const goalTaskStats = new Map([['goal-1', { completed: 50, total: 50 }]])
+    const stats = computeDashboardStats([], [], [GOAL], [SPHERE], null, TODAY, goalTaskStats)
+    const [goalStat] = stats.goalStats
+    if (!goalStat) throw new Error('Expected goalStat')
+    expect(goalStat.overallCompletionRate).toBe(1.0)
+  })
+
+  it('overallCompletionRate=0 when goalTaskStats is empty (goal not yet scheduled)', () => {
+    // No entry for the goal in the map → falls back to { completed: 0, total: 0 }
+    const stats = computeDashboardStats([], [], [GOAL], [SPHERE], null, TODAY, new Map())
+    const [goalStat] = stats.goalStats
+    if (!goalStat) throw new Error('Expected goalStat')
+    expect(goalStat.overallCompletionRate).toBe(0)
+    expect(goalStat.overallTotal).toBe(0)
+  })
+
+  it('weekly stats remain independent of overall stats', () => {
+    const weekTasks = [
+      makeTask({ status: 'completed', goal_id: 'goal-1', scheduled_date: TODAY }),
+      makeTask({ status: 'scheduled', goal_id: 'goal-1', scheduled_date: TODAY }),
+    ]
+    const goalTaskStats = new Map([['goal-1', { completed: 5, total: 90 }]])
+    const stats = computeDashboardStats([], weekTasks, [GOAL], [SPHERE], null, TODAY, goalTaskStats)
+    const [goalStat] = stats.goalStats
+    if (!goalStat) throw new Error('Expected goalStat')
+    // Weekly: 1 completed / 2 total = 50%
+    expect(goalStat.weeklyCompleted).toBe(1)
+    expect(goalStat.weeklyTotal).toBe(2)
+    expect(goalStat.weeklyCompletionRate).toBeCloseTo(0.5)
+    // Overall: 5 / 90 ≈ 5.6%
+    expect(goalStat.overallCompleted).toBe(5)
+    expect(goalStat.overallTotal).toBe(90)
+    expect(goalStat.overallCompletionRate).toBeCloseTo(5 / 90)
+  })
+})

@@ -5,10 +5,14 @@
  */
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { createGoal, createQuests, clearDialogMessages } from '@/lib/supabase/goals'
 import { createTasks } from '@/lib/supabase/tasks'
 import { createNote } from '@/lib/supabase/notes'
 import { getSphereById } from '@/lib/supabase/spheres'
+import { decryptToken, encryptToken } from '@/lib/calendar/encryption'
+import { refreshAccessToken, type OAuthTokens } from '@/lib/calendar/oauth'
+import { createTaskEvent } from '@/lib/calendar/event-sync'
 import { createLogger } from '@/lib/logger'
 import type { GoalInsert, GoalType, QuestDraft, QuestInsert, TaskInsert, TaskPlanEntry } from '@/lib/supabase/types'
 
@@ -82,22 +86,38 @@ export async function POST(request: NextRequest) {
     const questIdByIndex = new Map(createdQuests.map((q, i) => [i, q.id]))
 
     // 3. Create tasks
-    const taskInserts: TaskInsert[] = tasks.map((t) => ({
-      user_id: user.id,
-      goal_id: goal.id,
-      quest_id: questIdByIndex.get(t.questIndex) ?? null,
-      title: t.title,
-      task_type: t.taskType,
-      scheduled_date: t.scheduledDate,
-      xp_reward: t.xpReward,
-      fatigue_cost: t.fatigueCost,
-      fatigue_type: t.fatigueType ?? 'intellectual',
-      repetition_index: t.repetitionIndex ?? null,
-      sequence_index: t.sequenceIndex ?? null,
-    }))
+    const taskInserts: TaskInsert[] = tasks.map((t) => {
+      const fatigueType = t.fatigueType ?? 'intellectual'
+      if (!t.fatigueType) {
+        logger.warn('fatigue_type missing on task — defaulting to intellectual', {
+          taskTitle: t.title,
+          taskType: t.taskType,
+          questIndex: t.questIndex,
+        })
+      }
+      logger.debug('fatigue_type assigned', {
+        taskTitle: t.title,
+        fatigueType,
+        taskType: t.taskType,
+      })
+      return {
+        user_id: user.id,
+        goal_id: goal.id,
+        quest_id: questIdByIndex.get(t.questIndex) ?? null,
+        title: t.title,
+        task_type: t.taskType,
+        scheduled_date: t.scheduledDate,
+        xp_reward: t.xpReward,
+        fatigue_cost: t.fatigueCost,
+        fatigue_type: fatigueType,
+        repetition_index: t.repetitionIndex ?? null,
+        sequence_index: t.sequenceIndex ?? null,
+        duration_minutes: t.taskType === 'strategic' ? 27 : 12,
+      }
+    })
 
-    await createTasks(supabase, taskInserts)
-    logger.debug('tasks created', { count: taskInserts.length })
+    const createdTasks = await createTasks(supabase, taskInserts)
+    logger.debug('tasks created', { count: createdTasks.length })
 
     // 4. Clear dialog messages for this sphere
     await clearDialogMessages(supabase, user.id, sphereId)
@@ -122,6 +142,103 @@ export async function POST(request: NextRequest) {
         logger.info('Goal note auto-created', { goalId: goal.id, sphereName, goalTitle: goal.title })
       } catch (err) {
         logger.warn('Goal note auto-creation failed (non-blocking)', {
+          goalId: goal.id,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    })()
+
+    // 6. Sync created tasks to Google Calendar (fire-and-forget — never blocks the response)
+    ;(async () => {
+      try {
+        const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY
+        if (!encryptionKey) {
+          logger.warn('[FIX] calendar sync skipped: TOKEN_ENCRYPTION_KEY not set', { goalId: goal.id })
+          return
+        }
+
+        const adminSupabase = createAdminClient()
+        const { data: profile } = await adminSupabase
+          .from('users')
+          .select('calendar_token_encrypted, timezone, activity_window_start')
+          .eq('id', user.id)
+          .maybeSingle()
+
+        if (!profile?.calendar_token_encrypted) {
+          logger.debug('[FIX] calendar sync skipped: no calendar connected', { userId: user.id, goalId: goal.id })
+          return
+        }
+
+        let tokens = JSON.parse(decryptToken(profile.calendar_token_encrypted, encryptionKey)) as OAuthTokens
+
+        // Refresh token if expired or within 5 min of expiry
+        const expiresAt = new Date(tokens.expiresAt).getTime()
+        if (Date.now() > expiresAt - 5 * 60 * 1000) {
+          if (!tokens.refresh_token) {
+            logger.warn('[FIX] calendar sync skipped: token expired, no refresh token', { userId: user.id })
+            return
+          }
+          logger.info('[FIX] calendar sync: refreshing access token', { userId: user.id })
+          tokens = await refreshAccessToken(tokens.refresh_token)
+          const newEncrypted = encryptToken(JSON.stringify(tokens), encryptionKey)
+          await adminSupabase.from('users').update({ calendar_token_encrypted: newEncrypted }).eq('id', user.id)
+        }
+
+        const timezone = profile.timezone || 'UTC'
+        const activityStart = (profile.activity_window_start as string | null) || '09:00:00'
+        const [startHourStr, startMinuteStr] = activityStart.split(':')
+        const startHour = Number(startHourStr ?? '9')
+        const startMinute = Number(startMinuteStr ?? '0')
+
+        // Group tasks by date to assign sequential start times per day
+        const tasksByDate = new Map<string, typeof createdTasks>()
+        for (const task of createdTasks) {
+          const date = task.scheduled_date
+          if (!tasksByDate.has(date)) tasksByDate.set(date, [])
+          tasksByDate.get(date)!.push(task)
+        }
+
+        let totalSynced = 0
+
+        for (const [, dateTasks] of tasksByDate) {
+          let currentOffsetMin = 0
+          for (const task of dateTasks) {
+            const durationMin = task.duration_minutes ?? (task.task_type === 'strategic' ? 27 : 12)
+            const totalMin = startHour * 60 + startMinute + currentOffsetMin
+            const eventHour = Math.floor(totalMin / 60) % 24
+            const eventMinute = totalMin % 60
+            const eventStartStr = `${String(eventHour).padStart(2, '0')}:${String(eventMinute).padStart(2, '0')}:00`
+
+            try {
+              const eventId = await createTaskEvent(
+                tokens.access_token,
+                { ...task, duration_minutes: durationMin },
+                eventStartStr,
+                timezone,
+                goal.title
+              )
+              await adminSupabase.from('tasks').update({ calendar_event_id: eventId }).eq('id', task.id)
+              currentOffsetMin += durationMin + 3 // 3-min buffer between tasks
+              totalSynced++
+            } catch (err) {
+              logger.error('[FIX] calendar sync: event creation failed for task', {
+                taskId: task.id,
+                scheduledDate: task.scheduled_date,
+                error: err instanceof Error ? err.message : String(err),
+              })
+              currentOffsetMin += durationMin + 3
+            }
+          }
+        }
+
+        logger.info('[FIX] calendar sync: complete', {
+          goalId: goal.id,
+          userId: user.id,
+          totalTasks: createdTasks.length,
+          synced: totalSynced,
+        })
+      } catch (err) {
+        logger.warn('[FIX] calendar sync failed (non-blocking)', {
           goalId: goal.id,
           error: err instanceof Error ? err.message : String(err),
         })

@@ -79,6 +79,19 @@ The following context is injected per request:
 If the user has many active goals, mention that adding another may strain their capacity.
 If calendar is not connected, note that task scheduling requires calendar connection.
 
+## Fatigue Type Assignment
+
+When calling \`generateQuests\`, assign \`fatigueType\` per quest based on what the user will **actually DO** for that quest — not the topic:
+
+- \`"physical"\` — body/exercise tasks: workouts, running, stretching, meal prep, sleep routines, sport practice
+- \`"emotional"\` — social/inner work: journaling, meditation, therapy, relationship building, mindfulness, habit tracking of wellbeing
+- \`"intellectual"\` — cognitive tasks: studying, coding, reading, research, writing, analysis, problem solving
+
+**Do NOT default every quest to \`"intellectual"\`.**
+If the user's goal involves exercise or physical habits → use \`"physical"\`.
+If it involves emotional wellbeing or social connection → use \`"emotional"\`.
+Only use \`"intellectual"\` when tasks genuinely require sustained mental effort.
+
 ## Rules
 - NEVER make up progress the user didn't claim
 - NEVER promise specific outcomes ("you WILL achieve X")
@@ -104,12 +117,22 @@ export function buildContextInjection(params: {
       ? `The user already has ${activeGoalsCount} active goals. Be mindful of cognitive load when determining task counts.`
       : `The user has ${activeGoalsCount} active goal(s) currently.`
 
+  // Infer likely default fatigue type from sphere name keywords
+  const sn = sphereName.toLowerCase()
+  const defaultFatigueType =
+    /health|sport|fit|gym|physical|body|exercise|run|workout|здоров|спорт|фитнес|трениров/.test(sn)
+      ? 'physical'
+      : /social|relation|friend|emotional|mental.health|family|communic|общение|отношен|социал|эмоц/.test(sn)
+        ? 'emotional'
+        : 'intellectual'
+
   return `
 ## Current Context
 
 **Sphere:** ${sphereName}
 **${loadNote}**
 **${calendarNote}**
+**Suggested fatigueType for this sphere: \`"${defaultFatigueType}"\`** — override per-quest if a specific quest's tasks differ.
 
 ## User Profile
 ${userProfile || '(No profile information available yet)'}

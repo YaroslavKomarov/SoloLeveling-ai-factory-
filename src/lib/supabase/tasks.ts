@@ -103,13 +103,62 @@ export async function getTasksByDateRange(
   return data
 }
 
-export async function getTasksByGoal(supabase: DB, goalId: string): Promise<TaskRow[]> {
-  logger.debug('getTasksByGoal', { goalId })
+/**
+ * Aggregate task counts (completed vs total, excluding cancelled) for a set of goals.
+ * Fetches only goal_id + status columns — lightweight even for large 90-day plans.
+ * Returns a Map keyed by goalId.
+ */
+export async function getGoalTaskStats(
+  supabase: DB,
+  userId: string,
+  goalIds: string[]
+): Promise<Map<string, { completed: number; total: number }>> {
+  if (goalIds.length === 0) {
+    logger.debug('getGoalTaskStats: no goals, returning empty map')
+    return new Map()
+  }
+
+  logger.debug('getGoalTaskStats', { userId, goalCount: goalIds.length })
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('goal_id, status')
+    .eq('user_id', userId)
+    .in('goal_id', goalIds)
+    .neq('status', 'cancelled')
+
+  if (error) {
+    logger.error('getGoalTaskStats failed', { userId, goalCount: goalIds.length, error: error.message })
+    throw new Error(`getGoalTaskStats: ${error.message}`)
+  }
+
+  const statsMap = new Map<string, { completed: number; total: number }>()
+  for (const row of data) {
+    if (!row.goal_id) continue
+    const entry = statsMap.get(row.goal_id) ?? { completed: 0, total: 0 }
+    entry.total++
+    if (row.status === 'completed') entry.completed++
+    statsMap.set(row.goal_id, entry)
+  }
+
+  logger.debug('getGoalTaskStats result', {
+    userId,
+    goalCount: goalIds.length,
+    rowCount: data.length,
+    statsMapSize: statsMap.size,
+  })
+
+  return statsMap
+}
+
+export async function getTasksByGoal(supabase: DB, goalId: string, userId: string): Promise<TaskRow[]> {
+  logger.debug('getTasksByGoal', { goalId, userId })
 
   const { data, error } = await supabase
     .from('tasks')
     .select()
     .eq('goal_id', goalId)
+    .eq('user_id', userId)
     .order('scheduled_date')
 
   if (error) {
@@ -117,7 +166,7 @@ export async function getTasksByGoal(supabase: DB, goalId: string): Promise<Task
     throw new Error(`getTasksByGoal: ${error.message}`)
   }
 
-  logger.debug('getTasksByGoal result', { goalId, count: data.length })
+  logger.debug('getTasksByGoal result', { goalId, userId, count: data.length })
   return data
 }
 

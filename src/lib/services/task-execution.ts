@@ -81,11 +81,20 @@ export async function completeTask(
     throw Object.assign(new Error('Task is not scheduled for today'), { code: 422 })
   }
 
-  // Step 3: If task_type === 'strategic', require note
+  // Step 3: If task_type === 'strategic', require note with min length and word count
   logger.debug('Step 3: Checking note requirement', { taskType: task.task_type })
-  if (task.task_type === 'strategic' && (!note || note.trim().length === 0)) {
-    logger.warn('Strategic task missing completion note', { taskId })
-    throw Object.assign(new Error('Strategic tasks require a completion note'), { code: 400 })
+  if (task.task_type === 'strategic') {
+    const trimmedNote = note?.trim() ?? ''
+    const noteLength = trimmedNote.length
+    const wordCount = trimmedNote.split(/\s+/).filter(Boolean).length
+
+    if (noteLength < 50 || wordCount < 8) {
+      logger.warn('complete rejected: note too short', { taskId, noteLength, wordCount })
+      throw Object.assign(
+        new Error(`Strategic tasks require a completion note (min 50 characters and 8 words). Got ${noteLength} chars, ${wordCount} words.`),
+        { code: 400 }
+      )
+    }
   }
 
   // Step 4: Calculate fatigue delta

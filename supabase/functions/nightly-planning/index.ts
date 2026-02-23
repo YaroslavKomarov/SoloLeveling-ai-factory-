@@ -496,6 +496,38 @@ Deno.serve(async (req: Request) => {
 
         // Planner agent is invoked via the Next.js API route (cannot import Node modules in Deno edge)
         result.tasksPlanned += tomorrowTasks?.length ?? 0
+
+        // Step 7.5: Sync tasks to Google Calendar (for users with calendar connected)
+        const calendarAppUrl = Deno.env.get('NEXT_PUBLIC_APP_URL')
+        const cronSecret = Deno.env.get('CRON_SECRET')
+
+        if (calendarAppUrl && cronSecret && (tomorrowTasks?.length ?? 0) > 0) {
+          try {
+            const syncRes = await fetch(`${calendarAppUrl}/api/calendar/sync-tasks`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${cronSecret}`,
+              },
+              body: JSON.stringify({ userId, date: tomorrow }),
+            })
+
+            if (syncRes.ok) {
+              const syncData = await syncRes.json()
+              if (syncData.skipped !== 'no_calendar') {
+                log(`Calendar sync complete for user ${userId}`, {
+                  synced: syncData.synced,
+                  errors: syncData.errors?.length ?? 0,
+                })
+              }
+            } else {
+              warn(`Calendar sync failed for user ${userId}`, { status: syncRes.status })
+            }
+          } catch (syncError) {
+            warn(`Calendar sync error for user ${userId}`, { error: String(syncError) })
+          }
+        }
+
         result.usersProcessed++
 
         // Step 8: Send push notification — daily mission briefing

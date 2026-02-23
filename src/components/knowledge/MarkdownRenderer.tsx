@@ -25,10 +25,9 @@ interface MarkdownRendererProps {
 }
 
 export function MarkdownRenderer({ note }: MarkdownRendererProps) {
-  const { notes, selectNote } = useKnowledgeStore((state) => ({
-    notes: state.notes,
-    selectNote: state.selectNote,
-  }))
+  // [FIX:T01] Split into individual selectors to avoid Zustand getSnapshot infinite loop.
+  const notes = useKnowledgeStore((s) => s.notes)
+  const selectNote = useKnowledgeStore((s) => s.selectNote)
 
   const [backlinks, setBacklinks] = useState<BacklinkNote[]>([])
 

@@ -125,24 +125,55 @@ export function ActiveGoalsCard({ goalStats }: ActiveGoalsCardProps) {
                   {goal.sphereName}
                 </p>
 
-                {/* Weekly completion bar */}
+                {/* 90-Day progress bar */}
+                <p
+                  style={{
+                    fontFamily: 'Cinzel, serif',
+                    fontSize: '0.5rem',
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                    color: 'rgba(255,255,255,0.25)',
+                    margin: '0 0 0.25rem',
+                  }}
+                >
+                  90-Day Progress
+                </p>
                 <Progress
-                  value={goal.weeklyCompletionRate * 100}
+                  value={goal.overallCompletionRate * 100}
                   color="white"
                   height="2px"
                 />
 
-                {/* Weekly count */}
-                <p
+                {/* Stats: overall + weekly */}
+                <div
                   style={{
-                    fontFamily: 'Cormorant, Georgia, serif',
-                    fontSize: '0.75rem',
-                    color: 'rgba(255,255,255,0.35)',
-                    margin: '0.3rem 0 0',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'baseline',
+                    marginTop: '0.3rem',
                   }}
                 >
-                  {goal.weeklyCompleted}/{goal.weeklyTotal} tasks this week
-                </p>
+                  <p
+                    style={{
+                      fontFamily: 'Cormorant, Georgia, serif',
+                      fontSize: '0.75rem',
+                      color: 'rgba(255,255,255,0.35)',
+                      margin: 0,
+                    }}
+                  >
+                    {goal.overallCompleted}/{goal.overallTotal} completed
+                  </p>
+                  <p
+                    style={{
+                      fontFamily: 'Cormorant, Georgia, serif',
+                      fontSize: '0.6875rem',
+                      color: 'rgba(255,255,255,0.22)',
+                      margin: 0,
+                    }}
+                  >
+                    {goal.weeklyCompleted}/{goal.weeklyTotal} this week
+                  </p>
+                </div>
               </motion.li>
             ))}
           </motion.ul>

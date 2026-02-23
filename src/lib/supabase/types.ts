@@ -187,6 +187,8 @@ export interface TaskRow {
   total_occurrences: number
   sequence_index: number | null     // compaction order (strategic only)
   completion_note: string | null    // required for strategic tasks, optional for regular
+  duration_minutes: number          // estimated task duration (regular=12, strategic=27)
+  calendar_event_id: string | null  // Google Calendar event ID, null if not synced
   created_at: string
   updated_at: string
 }
@@ -204,6 +206,8 @@ export type TaskInsert = Omit<TaskRow, 'id' | 'created_at' | 'updated_at'> & {
   total_occurrences?: number
   sequence_index?: number | null
   completion_note?: string | null
+  duration_minutes?: number
+  calendar_event_id?: string | null
 }
 
 export type TaskUpdate = Partial<Omit<TaskRow, 'id' | 'user_id' | 'goal_id' | 'created_at'>>

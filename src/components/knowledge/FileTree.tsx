@@ -179,10 +179,11 @@ interface FileTreeProps {
 }
 
 export function FileTree({ notes, onCreateNote }: FileTreeProps) {
-  const { selectedNoteId, selectNote } = useKnowledgeStore((state) => ({
-    selectedNoteId: state.selectedNoteId,
-    selectNote: state.selectNote,
-  }))
+  // [FIX:T01] Split into individual selectors to avoid Zustand getSnapshot infinite loop.
+  // Inline object selector `(s) => ({ ... })` creates a new object on every call,
+  // causing React to detect "state change" → infinite re-render.
+  const selectedNoteId = useKnowledgeStore((s) => s.selectedNoteId)
+  const selectNote = useKnowledgeStore((s) => s.selectNote)
 
   const handleSelectNote = useCallback(
     (noteId: string) => {

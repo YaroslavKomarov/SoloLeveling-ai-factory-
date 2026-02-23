@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import type { TaskRow } from '@/lib/supabase/types'
 import { useTasksStore } from '@/store/tasks'
 import { useUserStore } from '@/store/user'
+import { useTimerStore } from '@/store/timer'
 import { StrategicExecutionDialog } from '@/components/tasks/StrategicExecutionDialog'
 import { fadeInUp, tapScale, cardHover } from '@/lib/animations/variants'
 import { createLogger } from '@/lib/logger'
@@ -33,11 +34,17 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
   const setXp = useUserStore((s) => s.setXp)
   const userFatigue = useUserStore((s) => s.fatigue)
 
+  const activeTaskId = useTimerStore((s) => s.activeTaskId)
+  const startTask = useTimerStore((s) => s.startTask)
+
   // Use store task if available (for live updates), fall back to prop
   const task = todaysTasks.find((t) => t.id === initialTask.id) ?? initialTask
   const fatigueCost = task.task_type === 'strategic' ? STRATEGIC_FATIGUE_COST : REGULAR_FATIGUE_COST
 
   const fatigueType = task.fatigue_type
+
+  const isActiveInTimer = activeTaskId === task.id
+  const anotherTaskActive = activeTaskId !== null && activeTaskId !== task.id
 
   // Check if completing this task would breach the soft fatigue limit (only for the relevant bar)
   const wouldBreachFatigue = userFatigue[fatigueType] + fatigueCost >= FATIGUE_SOFT_LIMIT
@@ -120,7 +127,6 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
 
       if (data.goalFailed) {
         logger.warn(`Goal failed after skip`, { taskId: task.id, reason: data.failureReason })
-        // GoalFailedBanner could be added here — showing error message for now
         setErrorMsg(`Goal failed: ${data.failureReason === 'consecutive_skips' ? '3 consecutive skips' : 'Skip rate exceeded 20%'}`)
       }
     } catch (err) {
@@ -135,11 +141,24 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
     }
   }
 
-  function onCompleteClick() {
+  function onStartClick() {
+    if (anotherTaskActive) {
+      setErrorMsg('Another task is already in progress. Cancel it before starting a new one.')
+      return
+    }
+
+    logger.debug('TaskCard.startTask', { taskId: task.id, taskType: task.task_type, durationMs: task.duration_minutes * 60000 })
+
+    startTask({
+      id: task.id,
+      title: task.title,
+      task_type: task.task_type,
+      duration_minutes: task.duration_minutes ?? (task.task_type === 'strategic' ? 27 : 12),
+      fatigue_type: task.fatigue_type,
+    })
+
     if (task.task_type === 'strategic') {
       setIsDialogOpen(true)
-    } else {
-      handleComplete()
     }
   }
 
@@ -150,12 +169,17 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
         whileHover={isFinished ? undefined : cardHover}
         style={{
           position: 'relative',
-          backgroundColor: 'rgba(15, 20, 25, 0.85)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          borderLeft: `3px solid ${accentColor}`,
+          backgroundColor: isActiveInTimer ? 'rgba(15, 20, 25, 0.95)' : 'rgba(15, 20, 25, 0.85)',
+          border: isActiveInTimer
+            ? `1px solid ${task.task_type === 'strategic' ? 'rgba(168, 85, 247, 0.5)' : 'rgba(0, 212, 255, 0.4)'}`
+            : '1px solid rgba(255, 255, 255, 0.1)',
+          borderLeft: `3px solid ${isActiveInTimer ? (task.task_type === 'strategic' ? '#a855f7' : '#00d4ff') : accentColor}`,
           padding: '1rem 1.25rem',
           opacity: isFinished ? 0.6 : 1,
-          transition: 'opacity 0.2s ease',
+          transition: 'opacity 0.2s ease, border-color 0.2s ease',
+          boxShadow: isActiveInTimer
+            ? `0 0 16px ${task.task_type === 'strategic' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(0, 212, 255, 0.15)'}`
+            : 'none',
         }}
       >
         {/* Status badge */}
@@ -176,6 +200,27 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
             }}
           >
             {isCompleted ? 'Completed' : 'Skipped'}
+          </div>
+        )}
+
+        {/* In-progress badge */}
+        {isActiveInTimer && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '0.75rem',
+              right: '0.75rem',
+              padding: '0.2rem 0.5rem',
+              backgroundColor: task.task_type === 'strategic' ? 'rgba(168, 85, 247, 0.15)' : 'rgba(0, 212, 255, 0.1)',
+              border: `1px solid ${task.task_type === 'strategic' ? 'rgba(168, 85, 247, 0.4)' : 'rgba(0, 212, 255, 0.3)'}`,
+              fontFamily: 'Cinzel, serif',
+              fontSize: '0.5625rem',
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: task.task_type === 'strategic' ? '#a855f7' : '#00d4ff',
+            }}
+          >
+            In Progress
           </div>
         )}
 
@@ -208,7 +253,7 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
           </span>
         </div>
 
-        {/* Metadata row: XP badge + fatigue cost */}
+        {/* Metadata row: XP badge + fatigue cost + duration */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.875rem' }}>
           <span
             style={{
@@ -233,6 +278,18 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
           >
             -{fatigueCost}% fatigue
           </span>
+          {task.duration_minutes != null && (
+            <span
+              style={{
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '0.625rem',
+                color: 'rgba(255, 255, 255, 0.35)',
+                letterSpacing: '0.05em',
+              }}
+            >
+              {task.duration_minutes}min
+            </span>
+          )}
           {task.task_type === 'strategic' && (
             <span
               style={{
@@ -266,10 +323,10 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
         )}
 
         {/* Action buttons */}
-        {!isFinished && (
+        {!isFinished && !isActiveInTimer && (
           <div style={{ display: 'flex', gap: '0.625rem' }}>
             <motion.button
-              onClick={onCompleteClick}
+              onClick={onStartClick}
               disabled={isLoading}
               whileTap={isLoading ? undefined : tapScale}
               style={{
@@ -296,9 +353,35 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
                   style={{ color: '#ec4899', flexShrink: 0 }}
                 />
               )}
-              Complete
+              Start
             </motion.button>
 
+            <motion.button
+              onClick={handleSkip}
+              disabled={isLoading}
+              whileTap={isLoading ? undefined : tapScale}
+              style={{
+                padding: '0.5rem 1rem',
+                backgroundColor: 'transparent',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                color: 'rgba(255, 255, 255, 0.4)',
+                fontFamily: 'Cinzel, serif',
+                fontSize: '0.6875rem',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                opacity: isLoading ? 0.5 : 1,
+                transition: 'border-color 0.2s ease',
+              }}
+            >
+              Skip
+            </motion.button>
+          </div>
+        )}
+
+        {/* In-progress state: only Skip available (complete via banner when timer ends) */}
+        {!isFinished && isActiveInTimer && task.task_type === 'regular' && (
+          <div style={{ display: 'flex', gap: '0.625rem' }}>
             <motion.button
               onClick={handleSkip}
               disabled={isLoading}

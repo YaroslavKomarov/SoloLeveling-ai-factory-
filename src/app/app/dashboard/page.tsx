@@ -4,12 +4,11 @@
  */
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getTasksByDate, getDailyFatigue, getTasksByDateRange } from '@/lib/supabase/tasks'
+import { getTasksByDate, getDailyFatigue, getTasksByDateRange, getGoalTaskStats } from '@/lib/supabase/tasks'
 import { getGoalsByUser } from '@/lib/supabase/goals'
 import { getSpheresByUser } from '@/lib/supabase/spheres'
 import { getCurrentRetro } from '@/lib/supabase/retrospectives'
 import { computeDashboardStats } from '@/lib/services/dashboard-stats'
-import { PlayerHeader } from '@/components/dashboard/PlayerHeader'
 import { TodayMissionCard } from '@/components/dashboard/TodayMissionCard'
 import { ActiveGoalsCard } from '@/components/dashboard/ActiveGoalsCard'
 import { WeeklyStatsCard } from '@/components/dashboard/WeeklyStatsCard'
@@ -49,9 +48,8 @@ export default async function DashboardPage() {
 
   logger.debug('DashboardPage loading', { userId: user.id, today, weekStart, weekEnd })
 
-  // Fetch user profile + all dashboard data in parallel
+  // Fetch all dashboard data in parallel
   const [
-    profileResult,
     todayTasks,
     weekTasks,
     fatigue,
@@ -59,11 +57,6 @@ export default async function DashboardPage() {
     spheres,
     pendingRetro,
   ] = await Promise.all([
-    supabase
-      .from('users')
-      .select('level, xp, display_name')
-      .eq('id', user.id)
-      .maybeSingle(),
     getTasksByDate(supabase, user.id, today),
     getTasksByDateRange(supabase, user.id, weekStart, weekEnd),
     getDailyFatigue(supabase, user.id, today),
@@ -72,15 +65,15 @@ export default async function DashboardPage() {
     getCurrentRetro(supabase, user.id),
   ])
 
-  const level = profileResult.data?.level ?? 1
-  const xp = profileResult.data?.xp ?? 0
-  const xpToNext = Math.floor(100 * Math.pow(level, 1.5))
-  const displayName = profileResult.data?.display_name ?? null
+  // [FIX:T02] Fetch 90-day task stats per goal (after activeGoals resolves)
+  const goalTaskStats = await getGoalTaskStats(
+    supabase,
+    user.id,
+    activeGoals.map((g) => g.id)
+  )
 
   logger.debug('dashboard data fetched', {
     userId: user.id,
-    level,
-    xp,
     todayTaskCount: todayTasks.length,
     weekTaskCount: weekTasks.length,
     hasFatigue: !!fatigue,
@@ -96,7 +89,8 @@ export default async function DashboardPage() {
     activeGoals,
     spheres,
     fatigue,
-    today
+    today,
+    goalTaskStats
   )
 
   logger.debug('dashboard stats computed', {
@@ -144,14 +138,6 @@ export default async function DashboardPage() {
           weekStart={pendingRetro.week_start}
         />
       )}
-
-      {/* Player XP / level hero section */}
-      <PlayerHeader
-        displayName={displayName}
-        level={level}
-        xp={xp}
-        xpToNext={xpToNext}
-      />
 
       {/* Two-column responsive grid for Today + Weekly */}
       <div
