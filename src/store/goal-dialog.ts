@@ -5,7 +5,7 @@
 import { create } from 'zustand'
 import type { GoalPlanResult, GoalType, QuestDraft } from '@/lib/supabase/types'
 
-type DialogPhase = 'idle' | 'gathering' | 'quests' | 'planning' | 'preview' | 'confirmed'
+type DialogPhase = 'idle' | 'gathering' | 'quests' | 'planning' | 'preview' | 'confirmed' | 'synthesis'
 
 interface DialogMessage {
   role: 'user' | 'assistant'
@@ -23,6 +23,10 @@ interface GoalDialogState {
   planResult: GoalPlanResult | null
   isLoading: boolean
   error: string | null
+  /** Synthesized note content returned by the suggestNoteContent tool */
+  synthesisNote: { title: string; content: string } | null
+  /** ID of the goal created after confirmation — used for note creation */
+  createdGoalId: string | null
 
   openDialog: (sphereId: string) => void
   closeDialog: () => void
@@ -36,6 +40,8 @@ interface GoalDialogState {
   setPlanResult: (result: GoalPlanResult) => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
+  setSynthesisNote: (note: { title: string; content: string } | null) => void
+  setCreatedGoalId: (goalId: string) => void
   reset: () => void
 }
 
@@ -49,6 +55,8 @@ const initialState = {
   planResult: null,
   isLoading: false,
   error: null,
+  synthesisNote: null,
+  createdGoalId: null,
 }
 
 export const useGoalDialogStore = create<GoalDialogState>((set) => ({
@@ -131,6 +139,10 @@ export const useGoalDialogStore = create<GoalDialogState>((set) => ({
   setLoading: (loading) => set({ isLoading: loading }),
 
   setError: (error) => set({ error }),
+
+  setSynthesisNote: (note) => set({ synthesisNote: note }),
+
+  setCreatedGoalId: (goalId) => set({ createdGoalId: goalId }),
 
   reset: () => {
     if (process.env.NODE_ENV === 'development') {

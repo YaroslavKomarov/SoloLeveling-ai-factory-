@@ -12,6 +12,11 @@ import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('api/agents/knowledge-rag')
 
+// Startup validation — log once per cold start so misconfiguration is obvious in server logs
+if (!process.env.OPENAI_API_KEY) {
+  logger.error('OPENAI_API_KEY is not configured — knowledge RAG semantic search will return empty results')
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()

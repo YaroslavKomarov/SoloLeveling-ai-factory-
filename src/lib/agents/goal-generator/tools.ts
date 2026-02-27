@@ -20,8 +20,10 @@ const logger = createLogger('agents/goal-generator/tools')
 
 export const readyToGenerateQuests = tool({
   description:
-    'Call this when you have gathered enough information about the user\'s goal to determine its type and generate key results. ' +
-    'This signals the transition from the gathering phase to quest generation.',
+    'Call this PROACTIVELY when you have gathered enough information about the user\'s goal to determine its type and generate key results. ' +
+    'Do NOT wait for the user to ask you to proceed — call this tool yourself as soon as you have sufficient context. ' +
+    'Do NOT suggest the user click any button before calling this tool. ' +
+    'Calling this signals the transition from gathering to quest generation and reveals the Generate button in the UI.',
   // [FIX] AI SDK v6 uses `inputSchema`, not `parameters`. Using `parameters` caused
   // tool.inputSchema to be undefined → asSchema(undefined) returned an empty schema
   // with additionalProperties:false → all model inputs failed Zod validation →
@@ -77,12 +79,16 @@ export const generateQuests = tool({
             '"intellectual" — mental/cognitive work (studying, coding, reading, analysis). ' +
             'Choose the type that best matches what the user will actually do.'
           ),
-          regularTaskTitle: z.string().describe(
-            'Short repeatable action title for the regular task, e.g. "Practice Python exercises". ' +
-            'Empty string if regularTaskCount is 0.'
+          regularTaskTitle: z.string().min(10).describe(
+            'Repeatable action title following [VERB] + [SPECIFIC OBJECT] + [LOCATION/RESOURCE]. ' +
+            'Must be ≥ 10 characters and reference a specific resource or location. ' +
+            'BAD: "Study JavaScript" | GOOD: "Complete freeCodeCamp JS array methods exercises (10 min)". ' +
+            'Empty string only if regularTaskCount is 0.'
           ),
-          strategicTaskTitles: z.array(z.string()).describe(
-            'Brief titles for each strategic task session, e.g. ["Design data pipeline", "Analyze first dataset"]. ' +
+          strategicTaskTitles: z.array(z.string().min(15)).describe(
+            'Titles for each strategic task following [VERB] + [SPECIFIC OBJECT] + [DELIVERABLE]. ' +
+            'Each title must be ≥ 15 characters and state a concrete deliverable. ' +
+            'BAD: "Analyze data" | GOOD: "Analyse competitor pricing data → comparison table in notes". ' +
             'Length must equal strategicTaskCount. Empty array if strategicTaskCount is 0.'
           ),
         })
@@ -96,6 +102,10 @@ export const generateQuests = tool({
       questCount: quests?.length ?? 0,
       totalRegular: quests?.reduce((s, q) => s + q.regularTaskCount, 0) ?? 0,
       totalStrategic: quests?.reduce((s, q) => s + q.strategicTaskCount, 0) ?? 0,
+    })
+    logger.debug('[goal-generator] generated tasks', {
+      regularTaskTitles: quests?.map(q => q.regularTaskTitle).filter(Boolean) ?? [],
+      strategicTaskTitles: quests?.flatMap(q => q.strategicTaskTitles) ?? [],
     })
     return { phase: 'planning', quests }
   },
@@ -132,9 +142,36 @@ export const validateLoad = tool({
   },
 })
 
+// =============================================================
+// Tool 4: suggestNoteContent
+// Synthesizes the planning conversation into a structured note.
+// Called after goal confirmation when user requests a summary.
+// =============================================================
+
+export const suggestNoteContent = tool({
+  description:
+    'Synthesize the goal planning conversation into a structured knowledge base note. ' +
+    'Call this ONLY after goal confirmation, when the user asks for a summary or notes of the conversation. ' +
+    'Do NOT call this during gathering, quests, planning, or preview phases.',
+  inputSchema: z.object({
+    title: z.string().describe(
+      'Short descriptive note title, e.g. "Goal Planning Insights — Python Data Analysis"'
+    ),
+    content: z.string().describe(
+      'Full markdown note content. Must include: ## Goal Summary, ## Key Decisions, ## Insights (3-5 bullet points), ## Next Steps. ' +
+      'Should be actionable and grounded in what was actually discussed.'
+    ),
+  }),
+  execute: async ({ title, content }) => {
+    logger.debug('suggestNoteContent called', { titleLength: title?.length ?? 0, contentLength: content?.length ?? 0 })
+    return { phase: 'synthesis', title, content }
+  },
+})
+
 // Export all tools as a map for streamText
 export const goalGeneratorTools = {
   readyToGenerateQuests,
   generateQuests,
   validateLoad,
+  suggestNoteContent,
 }

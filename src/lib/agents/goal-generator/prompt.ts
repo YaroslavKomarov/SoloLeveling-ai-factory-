@@ -61,6 +61,26 @@ When generating quests (Key Results):
 - Regular task title: a short, repeatable action (e.g., "Practice Python exercises", "Morning run")
 - Strategic task titles: specific, outcome-oriented sessions (e.g., "Design system architecture", "Write chapter outline")
 
+## Task Formulation Rules
+
+Every task title MUST follow: **[ACTION VERB] + [SPECIFIC OBJECT] + [MEASURABLE OUTCOME]**
+
+BAD (vague): "Study JavaScript", "Work on project", "Practice coding"
+GOOD (atomic): "Complete JavaScript array methods exercises (exercises 1–10 on freeCodeCamp)"
+GOOD (atomic): "Write unit tests for UserService.login() covering 3 edge cases: empty password, wrong email, expired token"
+GOOD (atomic): "Read pages 45–67 of 'The Phoenix Project' and write a 2-sentence summary"
+
+Every task title must answer: **"What exactly do I do? When am I done?"**
+
+**Duration constraints:**
+- Regular tasks: 10–15 min max — must reference a specific resource, tool, or location (e.g., "Duolingo Spanish lesson 12", "Grease the Groove — 5 pull-up sets at home bar")
+- Strategic tasks: 25–30 min max — must include the expected deliverable (e.g., "Outline chapter 3 → result: 500-word draft saved as a note", "Analyse competitor pricing → result: comparison table in notes")
+
+**Forbidden patterns:**
+- Single-word actions: "Study", "Practice", "Work", "Read" without object and outcome
+- Generic objects: "the project", "the code", "the material"
+- Outcome-free titles that leave "done" undefined
+
 ## Task Count Guidelines
 For **skill-based** goals:
 - 3–4 regular tasks per quest (habit-building)
@@ -96,7 +116,19 @@ Only use \`"intellectual"\` when tasks genuinely require sustained mental effort
 - NEVER make up progress the user didn't claim
 - NEVER promise specific outcomes ("you WILL achieve X")
 - ALWAYS ground recommendations in what the user told you
-- If the goal is unclear after 3 exchanges, explicitly ask for clarification before proceeding`
+- If the goal is unclear after 3 exchanges, explicitly ask for clarification before proceeding
+- You MUST call \`readyToGenerateQuests\` tool yourself when you have enough information — do NOT ask the user to click any "Generate" button first. The button becomes visible in the UI automatically after you call the tool.
+
+## Note Synthesis (CONFIRMED phase only)
+After the goal is confirmed and the user asks for a summary or conversation notes, call \`suggestNoteContent\`.
+The note must include:
+- **## Goal Summary** — goal type, sphere, chosen approach in 2–3 sentences
+- **## Key Decisions** — quest choices, task structure, fatigue types chosen
+- **## Insights** — 3–5 bullet points of important context the user shared (constraints, motivations, resources)
+- **## Next Steps** — 2–3 concrete actions to start strong
+
+Format: clean markdown. Be specific — reference what was actually discussed, not generic advice.
+**Do NOT call \`suggestNoteContent\` during GATHERING, QUESTS, PLANNING, or PREVIEW phases.**`
 
 /** Builds the context injection for the system prompt */
 export function buildContextInjection(params: {
@@ -104,8 +136,9 @@ export function buildContextInjection(params: {
   activeGoalsCount: number
   calendarConnected: boolean
   sphereName: string
+  hasActiveGoalInSphere?: boolean
 }): string {
-  const { userProfile, activeGoalsCount, calendarConnected, sphereName } = params
+  const { userProfile, activeGoalsCount, calendarConnected, sphereName, hasActiveGoalInSphere } = params
 
   const calendarNote = calendarConnected
     ? 'Google Calendar is connected — tasks will be scheduled in free slots.'
@@ -126,6 +159,10 @@ export function buildContextInjection(params: {
         ? 'emotional'
         : 'intellectual'
 
+  const sphereConstraintNote = hasActiveGoalInSphere
+    ? '**⚠️ CONSTRAINT: This sphere already has an active goal. The user CANNOT create a new goal here until they complete or cancel the existing one. Inform the user of this constraint early in the conversation.**'
+    : ''
+
   return `
 ## Current Context
 
@@ -133,6 +170,7 @@ export function buildContextInjection(params: {
 **${loadNote}**
 **${calendarNote}**
 **Suggested fatigueType for this sphere: \`"${defaultFatigueType}"\`** — override per-quest if a specific quest's tasks differ.
+${sphereConstraintNote}
 
 ## User Profile
 ${userProfile || '(No profile information available yet)'}

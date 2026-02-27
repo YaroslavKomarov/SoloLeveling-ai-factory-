@@ -86,6 +86,92 @@ describe('searchNotes.execute', () => {
     expect(result.results).toHaveLength(0)
     expect(result.error).toBeDefined()
   })
+
+  it('returns mapped results when embedding + RPC succeed', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+
+    // Mock OpenAI embedding response
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ embedding: new Array(1536).fill(0.1) }],
+      }),
+    })
+    vi.stubGlobal('fetch', mockFetch)
+
+    // Mock Supabase RPC match_notes
+    const mockRpc = vi.fn().mockResolvedValue({
+      data: [{ note_id: 'note-1', content: 'chunk text', similarity: 0.87 }],
+      error: null,
+    })
+    mockCreateClient.mockResolvedValue({ rpc: mockRpc } as never)
+
+    // Mock getNoteById to return note details
+    const note = makeNote({ id: 'note-1', path: 'sphere/goal.md', title: 'My Goal' })
+    mockGetNoteById.mockResolvedValue(note)
+
+    const result = await searchNotes.execute!(
+      { userId: 'user-1', query: 'my goal progress', limit: 5 },
+      undefined as never
+    ) as { results: { noteId: string; path: string; title: string; content: string; similarity: number }[] }
+
+    // Verify embedding request shape
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://api.openai.com/v1/embeddings',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('text-embedding-3-small'),
+      })
+    )
+
+    // Verify RPC call shape
+    expect(mockRpc).toHaveBeenCalledWith('match_notes', expect.objectContaining({
+      match_user_id: 'user-1',
+      match_count: 5,
+    }))
+
+    // Verify result mapping
+    expect(result.results).toHaveLength(1)
+    expect(result.results[0]).toMatchObject({
+      noteId: 'note-1',
+      path: 'sphere/goal.md',
+      title: 'My Goal',
+      content: 'chunk text',
+      similarity: 0.87,
+    })
+
+    vi.unstubAllGlobals()
+    delete process.env.OPENAI_API_KEY
+  })
+
+  it('returns empty results when match_notes RPC fails', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ embedding: new Array(1536).fill(0.1) }],
+      }),
+    })
+    vi.stubGlobal('fetch', mockFetch)
+
+    const mockRpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'RPC function not found' },
+    })
+    mockCreateClient.mockResolvedValue({ rpc: mockRpc } as never)
+
+    const result = await searchNotes.execute!(
+      { userId: 'user-1', query: 'test', limit: 5 },
+      undefined as never
+    ) as { results: unknown[]; error?: string }
+
+    expect(result.results).toHaveLength(0)
+    expect(result.error).toBe('RPC function not found')
+
+    vi.unstubAllGlobals()
+    delete process.env.OPENAI_API_KEY
+  })
 })
 
 // ============================================================

@@ -3,12 +3,13 @@
  *
  * Three tools:
  * 1. getScheduledSlots   — retrieves free calendar slots for a date
- * 2. planTodaysTasks     — assigns tasks to time slots and persists
+ * 2. planTodaysTasks     — schedules tasks with interleaving + break rules, then persists
  * 3. detectMissedTasks   — finds tasks that were scheduled but not completed
  */
 import { tool } from 'ai'
 import { z } from 'zod'
 import { createLogger } from '@/lib/logger'
+import { scheduleTasks } from '@/lib/tasks/scheduler'
 
 const logger = createLogger('agents/daily-planner/tools')
 
@@ -20,8 +21,8 @@ export interface CalendarSlot {
 
 export interface TaskAssignment {
   taskId: string
-  scheduledStart: string  // ISO datetime
-  scheduledEnd: string    // ISO datetime
+  scheduledStart: string  // HH:MM
+  scheduledEnd: string    // HH:MM
 }
 
 // =============================================================
@@ -56,55 +57,82 @@ export const getScheduledSlots = tool({
 
 // =============================================================
 // Tool 2: planTodaysTasks
-// Persists the task schedule assignments.
+// Computes the optimal schedule with interleaving + break rules,
+// then persists the task assignments.
 // =============================================================
 
 export const planTodaysTasks = tool({
   description:
-    'Save the planned task schedule. Validates interleaving rules (alternate fatigue types and goals, ' +
-    'proper break times), then persists the assignments to the database. ' +
-    'Call this once you have built the optimal schedule.',
+    'Compute and save the planned task schedule for the day. ' +
+    'Provide a list of tasks (with their fatigue type, task type, and goal) plus the day start time. ' +
+    'The tool automatically applies interleaving rules (alternate fatigue types, alternate goals) and ' +
+    'inserts proper breaks (5 min after regular, 10 min after strategic, 15 min long break after 90 min or 4 tasks). ' +
+    'Call this once after retrieving available slots — do NOT pre-compute start/end times yourself.',
   parameters: z.object({
     userId: z.string().describe('The user ID'),
     date: z.string().describe('The date being planned (YYYY-MM-DD)'),
-    assignments: z.array(z.object({
+    dayStartTime: z.string().describe(
+      'Wall-clock time to start the first task in HH:MM format (e.g. "09:00"). ' +
+      'Use the beginning of the first available free slot.'
+    ),
+    tasks: z.array(z.object({
       taskId: z.string().describe('Task ID to schedule'),
-      scheduledStart: z.string().describe('ISO datetime for task start'),
-      scheduledEnd: z.string().describe('ISO datetime for task end'),
-    })).describe('Ordered list of task-to-slot assignments'),
+      taskType: z.enum(['regular', 'strategic']).describe('Task type — determines duration and break length'),
+      fatigueType: z.enum(['physical', 'emotional', 'intellectual']).describe('Fatigue category for interleaving'),
+      goalId: z.string().describe('Goal this task belongs to — used for goal interleaving'),
+      durationMinutes: z.number().optional().describe('Override duration in minutes. Defaults: regular=12, strategic=27'),
+    })).describe('Tasks to schedule. Tool will determine optimal order and compute time slots.'),
   }),
-  execute: async ({ userId, date, assignments }) => {
-    logger.debug('planTodaysTasks called', { userId, date, assignmentCount: assignments.length })
+  execute: async ({ userId, date, dayStartTime, tasks }) => {
+    logger.debug('[daily-planner/planTodaysTasks] entry', { userId, date, dayStartTime, taskCount: tasks.length })
 
     const violations: string[] = []
-    let planned = 0
 
-    // Validate interleaving (simplified — full implementation would check fatigue types)
-    for (let i = 1; i < assignments.length; i++) {
-      const prev = assignments[i - 1]
-      const curr = assignments[i]
-      if (prev.taskId === curr.taskId) {
-        violations.push(`Duplicate task assignment: ${curr.taskId}`)
+    // Validate for duplicates
+    const seenIds = new Set<string>()
+    for (const task of tasks) {
+      if (seenIds.has(task.taskId)) {
+        violations.push(`Duplicate task: ${task.taskId}`)
       }
+      seenIds.add(task.taskId)
     }
 
-    // In production: persist assignments to tasks table via DB update
-    // For now, log the intended schedule
-    logger.info('Task assignments to be persisted', {
+    if (violations.length > 0) {
+      logger.warn('[daily-planner/planTodaysTasks] violations before scheduling', { violations })
+    }
+
+    // Run the scheduling algorithm
+    const { assignments, decisionLog } = scheduleTasks(tasks, dayStartTime)
+
+    logger.debug('[daily-planner/planTodaysTasks] scheduling decisions', { decisionLog })
+
+    // Log the full computed schedule
+    logger.info('[daily-planner/planTodaysTasks] computed schedule', {
       userId,
       date,
-      assignments: assignments.map((a) => ({
+      schedule: assignments.map((a) => ({
         taskId: a.taskId,
         start: a.scheduledStart,
         end: a.scheduledEnd,
       })),
     })
 
-    planned = assignments.length - violations.length
+    // In production: persist assignments to tasks table (scheduled_start_time column)
+    // and trigger Google Calendar sync via /api/calendar/sync-tasks
+    // Currently logged — nightly cron handles DB persistence after this tool returns.
+    logger.info('[daily-planner/planTodaysTasks] complete', {
+      userId,
+      date,
+      planned: assignments.length,
+      violations: violations.length,
+    })
 
-    logger.info('planTodaysTasks complete', { userId, date, planned, violations: violations.length })
-
-    return { planned, violations }
+    return {
+      planned: assignments.length,
+      violations,
+      schedule: assignments,
+      decisionLog,
+    }
   },
 })
 

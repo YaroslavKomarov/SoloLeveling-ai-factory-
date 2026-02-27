@@ -6,7 +6,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createGoal, createQuests, clearDialogMessages } from '@/lib/supabase/goals'
+import { createGoal, createQuests, clearDialogMessages, getActiveGoalBySphere } from '@/lib/supabase/goals'
 import { createTasks } from '@/lib/supabase/tasks'
 import { createNote } from '@/lib/supabase/notes'
 import { getSphereById } from '@/lib/supabase/spheres'
@@ -52,6 +52,23 @@ export async function POST(request: NextRequest) {
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // 1a. Enforce one active goal per sphere constraint
+    const existingActiveGoal = await getActiveGoalBySphere(supabase, user.id, sphereId)
+    logger.info('[goals/confirm] active goal check', {
+      sphereId,
+      existingGoalId: existingActiveGoal?.id ?? null,
+    })
+    if (existingActiveGoal) {
+      logger.warn('[goals/confirm] blocked: active goal exists', {
+        sphereId,
+        existingGoalId: existingActiveGoal.id,
+      })
+      return NextResponse.json(
+        { error: 'ACTIVE_GOAL_EXISTS', message: 'This sphere already has an active goal' },
+        { status: 409 }
+      )
     }
 
     // 1. Create goal

@@ -147,6 +147,34 @@ export async function updateGoal(
   return data
 }
 
+/**
+ * Returns the active goal for a user in a given sphere, or null if none.
+ * Used to enforce the one-active-goal-per-sphere constraint.
+ */
+export async function getActiveGoalBySphere(
+  supabase: DB,
+  userId: string,
+  sphereId: string
+): Promise<GoalRow | null> {
+  logger.debug('getActiveGoalBySphere', { userId, sphereId })
+
+  const { data, error } = await supabase
+    .from('goals')
+    .select()
+    .eq('user_id', userId)
+    .eq('sphere_id', sphereId)
+    .eq('status', 'active')
+    .maybeSingle()
+
+  if (error) {
+    logger.error('getActiveGoalBySphere failed', { userId, sphereId, error: error.message })
+    throw new Error(`getActiveGoalBySphere: ${error.message}`)
+  }
+
+  logger.debug('getActiveGoalBySphere result', { userId, sphereId, found: !!data, goalId: data?.id })
+  return data
+}
+
 // =============================================================
 // Quests
 // =============================================================
