@@ -1,13 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { AlertTriangle } from 'lucide-react'
 import { motion } from 'framer-motion'
 import type { TaskRow } from '@/lib/supabase/types'
 import { useTasksStore } from '@/store/tasks'
 import { useUserStore } from '@/store/user'
 import { useTimerStore } from '@/store/timer'
-import { StrategicExecutionDialog } from '@/components/tasks/StrategicExecutionDialog'
 import { fadeInUp, tapScale, cardHover } from '@/lib/animations/variants'
 import { createLogger } from '@/lib/logger'
 
@@ -23,7 +23,7 @@ const STRATEGIC_FATIGUE_COST = 6
 const FATIGUE_SOFT_LIMIT = 91
 
 export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -158,7 +158,11 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
     })
 
     if (task.task_type === 'strategic') {
-      setIsDialogOpen(true)
+      // Redirect to goal expert chat instead of opening dialog
+      logger.debug('[TaskCard] strategic task start → redirect', { goalId: task.goal_id, taskId: task.id })
+      router.push(
+        `/app/goals/${task.goal_id}?tab=expert&newTaskSession=${task.id}&newTaskTitle=${encodeURIComponent(task.title)}`
+      )
     }
   }
 
@@ -406,17 +410,6 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
         )}
       </motion.div>
 
-      {/* Strategic execution dialog */}
-      {isDialogOpen && (
-        <StrategicExecutionDialog
-          task={task}
-          onComplete={(note) => {
-            setIsDialogOpen(false)
-            handleComplete(note)
-          }}
-          onClose={() => setIsDialogOpen(false)}
-        />
-      )}
     </>
   )
 }
