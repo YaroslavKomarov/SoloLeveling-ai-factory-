@@ -11,7 +11,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getSmartModel } from '@/lib/ai/provider'
 import { createClient } from '@/lib/supabase/server'
 import { listNotesByPrefix } from '@/lib/supabase/notes'
-import { getGoalsByUser, saveDialogMessage, getDialogMessages } from '@/lib/supabase/goals'
+import { getGoalsByUser, saveDialogMessage, getDialogMessages, getActiveGoalBySphere } from '@/lib/supabase/goals'
 import { getSphereById } from '@/lib/supabase/spheres'
 import { buildContextMessages } from '@/lib/agents/goal-generator/context'
 import {
@@ -83,9 +83,13 @@ export async function POST(request: NextRequest) {
       profileLength: userProfile.length,
     })
 
-    // 4. Load active goals count
+    // 4. Load active goals count + per-sphere constraint check
     const activeGoals = await getGoalsByUser(supabase, userId, 'active')
     const activeGoalsCount = activeGoals.length
+    const activeGoalInSphere = await getActiveGoalBySphere(supabase, userId, sphereId)
+    const hasActiveGoalInSphere = !!activeGoalInSphere
+
+    logger.debug('sphere active goal check', { sphereId, hasActiveGoalInSphere, existingGoalId: activeGoalInSphere?.id ?? null })
 
     // 5. Check calendar connection
     const { data: userRow } = await supabase
@@ -144,6 +148,7 @@ export async function POST(request: NextRequest) {
       activeGoalsCount,
       calendarConnected,
       sphereName: sphere.name,
+      hasActiveGoalInSphere,
     })
 
     const systemPrompt = GOAL_GENERATOR_SYSTEM_PROMPT + '\n' + contextInjection

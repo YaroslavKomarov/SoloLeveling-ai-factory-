@@ -7,6 +7,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Trash2, Loader2 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useKnowledgeStore } from '@/store/knowledge'
 import type { ChatMessage } from '@/store/knowledge'
 import { createLogger } from '@/lib/logger'
@@ -223,11 +225,17 @@ export function RagChatPanel() {
                   fontSize: '14px',
                   lineHeight: '1.6',
                   color: msg.role === 'user' ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.75)',
-                  whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
                 }}
+                className={msg.role === 'assistant' ? 'rag-assistant-message' : undefined}
               >
-                {msg.content}
+                {msg.role === 'assistant' ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {msg.content}
+                  </ReactMarkdown>
+                ) : (
+                  <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
+                )}
               </div>
             </motion.div>
           ))}
@@ -249,11 +257,13 @@ export function RagChatPanel() {
                 fontSize: '14px',
                 lineHeight: '1.6',
                 color: 'rgba(255,255,255,0.75)',
-                whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
               }}
+              className="rag-assistant-message"
             >
-              {streamingMessage}
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {streamingMessage}
+              </ReactMarkdown>
               <span
                 style={{
                   display: 'inline-block',
@@ -355,6 +365,18 @@ export function RagChatPanel() {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
+        .rag-assistant-message p { margin: 0 0 8px 0; }
+        .rag-assistant-message p:last-child { margin-bottom: 0; }
+        .rag-assistant-message h2 { font-size: 13px; font-weight: 600; margin: 10px 0 4px 0; color: rgba(255,255,255,0.5); text-transform: uppercase; letter-spacing: 0.05em; }
+        .rag-assistant-message h3 { font-size: 13px; font-weight: 600; margin: 8px 0 4px 0; }
+        .rag-assistant-message ul { margin: 4px 0; padding-left: 16px; }
+        .rag-assistant-message li { margin: 2px 0; }
+        .rag-assistant-message a { color: rgba(200,180,120,0.9); text-decoration: underline; text-decoration-color: rgba(200,180,120,0.4); }
+        .rag-assistant-message a:hover { color: rgba(220,200,140,1); }
+        .rag-assistant-message code { font-family: monospace; font-size: 12px; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 3px; }
+        .rag-assistant-message em { color: rgba(255,255,255,0.55); }
+        .rag-assistant-message strong { color: rgba(255,255,255,0.9); }
+        .rag-assistant-message hr { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 8px 0; }
       `}</style>
     </div>
   )

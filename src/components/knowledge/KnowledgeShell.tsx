@@ -47,6 +47,7 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
   const [isCreating, setIsCreating] = useState(false)
   const [newNoteTitle, setNewNoteTitle] = useState('')
   const [newNotePath, setNewNotePath] = useState('')
+  const [createError, setCreateError] = useState('')
 
   // [FIX:T01] Log mount to confirm no infinite loop regression
   useEffect(() => {
@@ -85,8 +86,16 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
     async () => {
       if (!newNoteTitle.trim()) return
 
-      const path = newNotePath.replace(/\/[^/]+$/, '') + '/' + newNoteTitle.trim().toLowerCase().replace(/\s+/g, '-')
-      logger.debug('Creating new note', { path, title: newNoteTitle })
+      logger.debug('[KnowledgeShell.handleCreateNoteSubmit] entry', { newNotePath, newNoteTitle })
+
+      // Fix: if newNotePath has no '/', there is no parent directory (root level)
+      const slug = newNoteTitle.trim().toLowerCase().replace(/\s+/g, '-')
+      const parentDir = newNotePath.includes('/') ? newNotePath.replace(/\/[^/]+$/, '') : ''
+      const path = parentDir ? `${parentDir}/${slug}` : slug
+
+      logger.debug('[KnowledgeShell.handleCreateNoteSubmit] computed path', { computedPath: path })
+
+      setCreateError('')
 
       try {
         const res = await fetch('/api/notes', {
@@ -101,14 +110,21 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
           selectNote(note.id)
           setIsEditing(true)
           logger.debug('New note created', { noteId: note.id, path: note.path })
+          // Only close on success
+          setIsCreating(false)
+          setNewNoteTitle('')
         } else {
-          logger.error('Failed to create note', { status: res.status })
+          let body: { error?: string } = {}
+          try { body = await res.json() } catch (_) { /* ignore parse error */ }
+          logger.error('[KnowledgeShell.handleCreateNoteSubmit] API error', { status: res.status, body })
+          setCreateError(body.error ?? `Failed to create note (${res.status})`)
+          // Do NOT close modal on failure — keep it open so user can retry
         }
       } catch (err) {
-        logger.error('Create note error', { error: err instanceof Error ? err.message : String(err) })
-      } finally {
-        setIsCreating(false)
-        setNewNoteTitle('')
+        const message = err instanceof Error ? err.message : String(err)
+        logger.error('[KnowledgeShell.handleCreateNoteSubmit] network error', { error: message })
+        setCreateError(message || 'Network error — could not create note')
+        // Do NOT close modal on failure
       }
     },
     [newNoteTitle, newNotePath, createNote, selectNote, setIsEditing]
@@ -342,7 +358,7 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
             justifyContent: 'center',
             zIndex: 100,
           }}
-          onClick={() => setIsCreating(false)}
+          onClick={() => { setIsCreating(false); setCreateError('') }}
         >
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -373,10 +389,10 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
             <input
               autoFocus
               value={newNoteTitle}
-              onChange={(e) => setNewNoteTitle(e.target.value)}
+              onChange={(e) => { setNewNoteTitle(e.target.value); if (createError) setCreateError('') }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleCreateNoteSubmit()
-                if (e.key === 'Escape') setIsCreating(false)
+                if (e.key === 'Escape') { setIsCreating(false); setCreateError('') }
               }}
               placeholder="Note title…"
               style={{
@@ -391,9 +407,23 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
               }}
             />
 
+            {createError && (
+              <div
+                style={{
+                  fontFamily: 'Cormorant, serif',
+                  fontSize: '14px',
+                  color: '#ef4444',
+                  padding: '4px 0',
+                }}
+                role="alert"
+              >
+                {createError}
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
               <button
-                onClick={() => setIsCreating(false)}
+                onClick={() => { setIsCreating(false); setCreateError('') }}
                 style={{
                   background: 'none',
                   border: '1px solid rgba(255,255,255,0.1)',

@@ -170,9 +170,9 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
         style={{
           position: 'relative',
           backgroundColor: isActiveInTimer ? 'rgba(15, 20, 25, 0.95)' : 'rgba(15, 20, 25, 0.85)',
-          border: isActiveInTimer
-            ? `1px solid ${task.task_type === 'strategic' ? 'rgba(168, 85, 247, 0.5)' : 'rgba(0, 212, 255, 0.4)'}`
-            : '1px solid rgba(255, 255, 255, 0.1)',
+          borderTop: `1px solid ${isActiveInTimer ? (task.task_type === 'strategic' ? 'rgba(168, 85, 247, 0.5)' : 'rgba(0, 212, 255, 0.4)') : 'rgba(255, 255, 255, 0.1)'}`,
+          borderRight: `1px solid ${isActiveInTimer ? (task.task_type === 'strategic' ? 'rgba(168, 85, 247, 0.5)' : 'rgba(0, 212, 255, 0.4)') : 'rgba(255, 255, 255, 0.1)'}`,
+          borderBottom: `1px solid ${isActiveInTimer ? (task.task_type === 'strategic' ? 'rgba(168, 85, 247, 0.5)' : 'rgba(0, 212, 255, 0.4)') : 'rgba(255, 255, 255, 0.1)'}`,
           borderLeft: `3px solid ${isActiveInTimer ? (task.task_type === 'strategic' ? '#a855f7' : '#00d4ff') : accentColor}`,
           padding: '1rem 1.25rem',
           opacity: isFinished ? 0.6 : 1,

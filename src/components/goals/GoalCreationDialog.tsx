@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Send, RefreshCw } from 'lucide-react'
+import { X, Send, RefreshCw, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
 import { QuestEditor } from './QuestEditor'
@@ -10,22 +10,37 @@ import { PlanPreview } from './PlanPreview'
 import { useGoalDialogStore } from '@/store/goal-dialog'
 import { useGoalsStore } from '@/store/goals'
 import { generateGoalPlan } from '@/lib/tasks/spaced-repetition'
+import { createLogger } from '@/lib/logger'
 import type { QuestDraft } from '@/lib/supabase/types'
+
+const logger = createLogger('GoalCreationDialog')
 
 export function GoalCreationDialog() {
   const {
     isOpen, sphereId, phase, messages,
     draftQuests, draftGoalType, planResult,
-    isLoading, error,
+    isLoading, error, synthesisNote, createdGoalId,
     setPhase, addMessage, setStreamingMessage, finalizeStreamingMessage,
     setDraftQuests, setDraftGoalType, setPlanResult,
-    setLoading, setError, closeDialog, reset,
+    setLoading, setError, setSynthesisNote, setCreatedGoalId,
+    closeDialog, reset,
   } = useGoalDialogStore()
 
   const addGoal = useGoalsStore(s => s.addGoal)
 
   const [inputValue, setInputValue] = useState('')
+  const [editedContent, setEditedContent] = useState('')
+  const [isCreatingNote, setIsCreatingNote] = useState(false)
+  // T07: progressive disclosure — button only shown after agent calls readyToGenerateQuests
+  const [isReadyToGenerate, setIsReadyToGenerate] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Sync edited content when synthesis note arrives
+  useEffect(() => {
+    if (synthesisNote) {
+      setEditedContent(synthesisNote.content)
+    }
+  }, [synthesisNote])
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -178,8 +193,14 @@ export function GoalCreationDialog() {
 
       if (r.phase === 'quests' && r.goalType) {
         setDraftGoalType(r.goalType as 'skill' | 'knowledge')
-        console.log('[FIX] phase → quests', { goalType: r.goalType })
-        setPhase('quests')
+        // T07: instead of immediately transitioning, reveal the Generate button
+        // and add a system message — user confirms when ready
+        setIsReadyToGenerate(true)
+        addMessage({
+          role: 'assistant',
+          content: 'I have everything I need. Click **Generate Goal Plan** when ready.',
+        })
+        logger.debug('[GoalCreationDialog] readyToGenerate signal received', { goalType: r.goalType })
       }
 
       if (r.phase === 'planning' && Array.isArray(r.quests)) {
@@ -224,6 +245,11 @@ export function GoalCreationDialog() {
         console.log('[FIX] phase → preview', { taskCount: planResult.tasks.length })
         setPhase('preview')
       }
+      if (r.phase === 'synthesis' && r.title && r.content) {
+        logger.debug('[GoalCreationDialog] synthesis tool result received', { titleLength: String(r.title).length })
+        setSynthesisNote({ title: r.title as string, content: r.content as string })
+        setPhase('synthesis')
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('[FIX] handleToolResult error', { error: msg, result })
@@ -258,20 +284,26 @@ export function GoalCreationDialog() {
         }),
       })
 
-      if (!res.ok) throw new Error('Failed to confirm goal')
+      if (!res.ok) {
+        let errorMsg = 'Failed to confirm goal'
+        try {
+          const body = await res.json() as { error?: string; message?: string }
+          if (body.error === 'ACTIVE_GOAL_EXISTS') {
+            errorMsg = 'This sphere already has an active goal. Complete or cancel it before creating a new one.'
+          } else if (body.message) {
+            errorMsg = body.message
+          }
+        } catch { /* ignore parse errors */ }
+        throw new Error(errorMsg)
+      }
 
       const { goal } = await res.json()
       addGoal(goal)
+      setCreatedGoalId(goal.id)
 
-      if (process.env.NODE_ENV === 'development') {
-        console.debug('[GoalCreationDialog] goal confirmed', { goalId: goal.id })
-      }
+      logger.debug('[GoalCreationDialog] goal confirmed', { goalId: goal.id })
 
       setPhase('confirmed')
-      setTimeout(() => {
-        reset()
-        closeDialog()
-      }, 1200)
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save goal')
@@ -284,6 +316,37 @@ export function GoalCreationDialog() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage(inputValue)
+    }
+  }
+
+  const handleClose = () => {
+    logger.debug('[GoalCreationDialog] user cancelled, resetting state', { phase, isReadyToGenerate })
+    reset()
+    closeDialog()
+  }
+
+  const handleRequestSynthesis = async () => {
+    logger.debug('[GoalCreationDialog] synthesis requested', { goalId: createdGoalId })
+    const prompt = 'Please create a note summarizing our goal planning conversation.'
+    addMessage({ role: 'user', content: prompt })
+    await callAgent(prompt)
+  }
+
+  const handleCreateNote = async () => {
+    if (!createdGoalId || !editedContent.trim()) return
+    setIsCreatingNote(true)
+    try {
+      await fetch(`/api/notes/goal/${createdGoalId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: editedContent }),
+      })
+      logger.info('[GoalCreationDialog] synthesis note created', { goalId: createdGoalId })
+    } catch (err) {
+      logger.error('[GoalCreationDialog] synthesis note creation failed', { goalId: createdGoalId, error: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setIsCreatingNote(false)
+      handleClose()
     }
   }
 
@@ -362,10 +425,11 @@ export function GoalCreationDialog() {
                 {phase === 'planning' && 'Generating 90-day plan...'}
                 {phase === 'preview' && 'Review your 90-day schedule'}
                 {phase === 'confirmed' && 'Goal created'}
+                {phase === 'synthesis' && 'Create summary note'}
               </p>
             </div>
             <button
-              onClick={() => { reset(); closeDialog() }}
+              onClick={handleClose}
               style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: 0 }}
             >
               <X size={18} />
@@ -450,13 +514,51 @@ export function GoalCreationDialog() {
 
             {/* CONFIRMED phase */}
             {phase === 'confirmed' && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, flexDirection: 'column', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, flexDirection: 'column', gap: '1rem' }}>
                 <span style={{ fontFamily: 'Cinzel, serif', fontSize: '1.125rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#ffffff' }}>
                   Goal Created
                 </span>
                 <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: 'rgba(255,255,255,0.5)' }}>
                   Your 90-day journey begins.
                 </span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+                  <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.875rem', color: 'rgba(255,255,255,0.4)' }}>
+                    Save key insights from this planning session?
+                  </span>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <Button
+                      onClick={() => void handleRequestSynthesis()}
+                      isLoading={isLoading}
+                      style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+                    >
+                      <FileText size={14} />
+                      Create summary note
+                    </Button>
+                    <Button variant="ghost" onClick={handleClose} style={{ fontSize: '0.8125rem' }}>
+                      Skip
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* SYNTHESIS phase: editable note content */}
+            {phase === 'synthesis' && synthesisNote && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
+                <div>
+                  <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.875rem', color: 'rgba(255,255,255,0.5)', margin: '0 0 0.25rem' }}>
+                    Note title: <em>{synthesisNote.title}</em>
+                  </p>
+                  <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.8125rem', color: 'rgba(255,255,255,0.35)', margin: 0 }}>
+                    Review and edit before saving to your Knowledge Base.
+                  </p>
+                </div>
+                <Textarea
+                  value={editedContent}
+                  onChange={(e) => setEditedContent(e.target.value)}
+                  rows={12}
+                  style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '0.8125rem', flex: 1 }}
+                />
               </div>
             )}
 
@@ -498,20 +600,17 @@ export function GoalCreationDialog() {
                   <Send size={16} />
                 </Button>
               </div>
-              {messages.length >= 2 && !isLoading && (
+              {isReadyToGenerate && !isLoading && (
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   <Button
                     onClick={() => {
-                      console.log('[FIX] Generate Goal button clicked')
-                      void callAgent(
-                        'I am ready. Please call the readyToGenerateQuests tool now to proceed to quest generation.',
-                        { forceGenerate: true, forceToolName: 'readyToGenerateQuests' }
-                      )
+                      logger.debug('[GoalCreationDialog] user confirmed generation')
+                      setPhase('quests')
                     }}
                     variant="ghost"
                     style={{ fontSize: '0.8125rem', opacity: 0.7 }}
                   >
-                    Generate Goal →
+                    Generate Goal Plan →
                   </Button>
                 </div>
               )}
@@ -568,6 +667,32 @@ export function GoalCreationDialog() {
               </Button>
               <Button onClick={handleConfirm} isLoading={isLoading}>
                 Confirm Goal
+              </Button>
+            </div>
+          )}
+
+          {phase === 'synthesis' && (
+            <div
+              style={{
+                padding: '0.875rem 1.25rem',
+                borderTop: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '0.5rem',
+                flexShrink: 0,
+              }}
+            >
+              <Button variant="ghost" onClick={handleClose} style={{ fontSize: '0.8125rem' }}>
+                Skip
+              </Button>
+              <Button
+                onClick={() => void handleCreateNote()}
+                isLoading={isCreatingNote}
+                disabled={!editedContent.trim()}
+                style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
+              >
+                <FileText size={14} />
+                Save note
               </Button>
             </div>
           )}

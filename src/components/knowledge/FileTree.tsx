@@ -6,7 +6,7 @@
  * Dark gothic style with Cormorant font.
  */
 import { useState, useCallback } from 'react'
-import { Lock, ChevronRight, ChevronDown, FileText, FolderOpen, Folder, Plus } from 'lucide-react'
+import { Lock, ChevronRight, ChevronDown, FileText, FolderOpen, Folder, Plus, Trash2 } from 'lucide-react'
 import type { NoteRow } from '@/lib/supabase/types'
 import { useKnowledgeStore } from '@/store/knowledge'
 import { createLogger } from '@/lib/logger'
@@ -68,14 +68,49 @@ interface FileNodeProps {
   selectedNoteId: string | null
   onSelectNote: (noteId: string) => void
   onCreateNote: (pathPrefix: string) => void
+  onDeleteNote: (noteId: string) => void
 }
 
-function FileNode({ node, depth, selectedNoteId, onSelectNote, onCreateNote }: FileNodeProps) {
+function FileNode({ node, depth, selectedNoteId, onSelectNote, onCreateNote, onDeleteNote }: FileNodeProps) {
   const [expanded, setExpanded] = useState(true)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const isSelected = node.note?.id === selectedNoteId
   const isReadonly = node.note?.is_readonly
 
   const indent = depth * 16
+
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    logger.debug('[FileTree] delete initiated', { noteId: node.note?.id, notePath: node.path })
+    setConfirmingDelete(true)
+  }
+
+  const handleDeleteConfirm = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!node.note) return
+    setIsDeleting(true)
+    try {
+      const res = await fetch(`/api/notes/${node.note.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        logger.error('[FileTree] delete failed', { noteId: node.note.id, status: res.status, body })
+      } else {
+        logger.info('[FileTree] note deleted', { noteId: node.note.id })
+        onDeleteNote(node.note.id)
+      }
+    } catch (error) {
+      logger.error('[FileTree] delete failed', { noteId: node.note.id, error })
+    } finally {
+      setIsDeleting(false)
+      setConfirmingDelete(false)
+    }
+  }
+
+  const handleDeleteCancel = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setConfirmingDelete(false)
+  }
 
   if (node.type === 'folder') {
     return (
@@ -128,6 +163,7 @@ function FileNode({ node, depth, selectedNoteId, onSelectNote, onCreateNote }: F
                 selectedNoteId={selectedNoteId}
                 onSelectNote={onSelectNote}
                 onCreateNote={onCreateNote}
+                onDeleteNote={onDeleteNote}
               />
             ))}
           </div>
@@ -136,10 +172,71 @@ function FileNode({ node, depth, selectedNoteId, onSelectNote, onCreateNote }: F
     )
   }
 
-  // File node
+  // File node — confirmation state
+  if (confirmingDelete) {
+    return (
+      <div
+        style={{
+          paddingLeft: `${8 + indent}px`,
+          paddingRight: '8px',
+          paddingTop: '4px',
+          paddingBottom: '4px',
+          backgroundColor: 'rgba(255,60,60,0.08)',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: 'Cormorant, serif',
+            fontSize: '12px',
+            color: 'rgba(255,255,255,0.6)',
+            marginBottom: '4px',
+          }}
+        >
+          Delete &ldquo;{node.name}&rdquo;?
+        </div>
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button
+            onClick={handleDeleteConfirm}
+            disabled={isDeleting}
+            style={{
+              fontSize: '11px',
+              fontFamily: 'Cormorant, serif',
+              color: '#ff6b6b',
+              background: 'rgba(255,60,60,0.15)',
+              border: '1px solid rgba(255,60,60,0.3)',
+              borderRadius: '3px',
+              padding: '2px 8px',
+              cursor: isDeleting ? 'not-allowed' : 'pointer',
+              opacity: isDeleting ? 0.6 : 1,
+            }}
+          >
+            {isDeleting ? 'Deleting...' : 'Delete'}
+          </button>
+          <button
+            onClick={handleDeleteCancel}
+            disabled={isDeleting}
+            style={{
+              fontSize: '11px',
+              fontFamily: 'Cormorant, serif',
+              color: 'rgba(255,255,255,0.4)',
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '3px',
+              padding: '2px 8px',
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // File node — normal state
   return (
     <div
-      className="flex items-center gap-1 py-1 px-2 cursor-pointer"
+      className="group flex items-center gap-1 py-1 px-2 cursor-pointer"
       style={{
         paddingLeft: `${8 + indent}px`,
         backgroundColor: isSelected ? 'rgba(255,255,255,0.06)' : 'transparent',
@@ -164,10 +261,19 @@ function FileNode({ node, depth, selectedNoteId, onSelectNote, onCreateNote }: F
       >
         {node.name}
       </span>
-      {isReadonly && (
+      {isReadonly ? (
         <span style={{ color: 'rgba(255,255,255,0.25)', flexShrink: 0 }} title="Managed by system">
           <Lock size={11} />
         </span>
+      ) : (
+        <button
+          className="opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ color: 'rgba(255,100,100,0.5)', flexShrink: 0 }}
+          onClick={handleDeleteClick}
+          title={`Delete "${node.name}"`}
+        >
+          <Trash2 size={11} />
+        </button>
       )}
     </div>
   )
@@ -184,6 +290,7 @@ export function FileTree({ notes, onCreateNote }: FileTreeProps) {
   // causing React to detect "state change" → infinite re-render.
   const selectedNoteId = useKnowledgeStore((s) => s.selectedNoteId)
   const selectNote = useKnowledgeStore((s) => s.selectNote)
+  const deleteNoteFromStore = useKnowledgeStore((s) => s.deleteNote)
 
   const handleSelectNote = useCallback(
     (noteId: string) => {
@@ -199,6 +306,14 @@ export function FileTree({ notes, onCreateNote }: FileTreeProps) {
       onCreateNote?.(pathPrefix)
     },
     [onCreateNote]
+  )
+
+  const handleDeleteNote = useCallback(
+    (noteId: string) => {
+      logger.debug('Delete note triggered from tree', { noteId })
+      deleteNoteFromStore(noteId)
+    },
+    [deleteNoteFromStore]
   )
 
   const tree = buildTree(notes)
@@ -233,6 +348,7 @@ export function FileTree({ notes, onCreateNote }: FileTreeProps) {
               selectedNoteId={selectedNoteId}
               onSelectNote={handleSelectNote}
               onCreateNote={handleCreateNote}
+              onDeleteNote={handleDeleteNote}
             />
           ))}
         </div>
