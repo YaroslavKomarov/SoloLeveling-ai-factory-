@@ -256,6 +256,46 @@ export type GoalDialogMessageInsert = Omit<GoalDialogMessageRow, 'id' | 'created
   is_summary?: boolean
 }
 
+// =============================================================
+// Phase 7: Goal Expert Chat types
+// =============================================================
+
+export type GoalChatSessionType = 'task' | 'general'
+export type GoalChatSessionStatus = 'active' | 'readonly'
+
+export interface GoalChatSessionRow {
+  id: string
+  user_id: string
+  goal_id: string
+  task_id: string | null
+  title: string
+  session_type: GoalChatSessionType
+  status: GoalChatSessionStatus
+  created_at: string
+  last_message_at: string
+}
+
+export type GoalChatSessionInsert = Omit<GoalChatSessionRow, 'id' | 'created_at' | 'last_message_at'> & {
+  task_id?: string | null
+  status?: GoalChatSessionStatus
+}
+
+export type GoalChatSessionUpdate = Partial<Pick<GoalChatSessionRow, 'status' | 'title' | 'last_message_at'>>
+
+export interface GoalChatMessageRow {
+  id: string
+  session_id: string
+  user_id: string
+  role: 'user' | 'assistant'
+  content: string
+  is_compressed_summary: boolean
+  created_at: string
+}
+
+export type GoalChatMessageInsert = Omit<GoalChatMessageRow, 'id' | 'created_at'> & {
+  is_compressed_summary?: boolean
+}
+
 // --- Domain types (not DB rows — for agent/UI use) ---
 
 /** Generated quest draft before DB insert */
@@ -420,6 +460,16 @@ export interface Database {
         Row: BehaviorPatternRow
         Insert: BehaviorPatternUpsert
         Update: Partial<Omit<BehaviorPatternRow, 'id' | 'user_id' | 'detected_at'>>
+      }
+      goal_chat_sessions: {
+        Row: GoalChatSessionRow
+        Insert: GoalChatSessionInsert
+        Update: GoalChatSessionUpdate
+      }
+      goal_chat_messages: {
+        Row: GoalChatMessageRow
+        Insert: GoalChatMessageInsert
+        Update: Partial<Omit<GoalChatMessageRow, 'id' | 'session_id' | 'user_id' | 'created_at'>>
       }
     }
     Functions: Record<string, never>
