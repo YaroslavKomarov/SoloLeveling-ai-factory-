@@ -151,7 +151,8 @@ export async function POST(request: NextRequest) {
         .update({ calendar_event_id: eventId })
         .eq('id', task.id)
 
-      currentOffsetMin += durationMin + 3 // 3-min buffer between tasks
+      const gapMin = task.task_type === 'strategic' ? 15 : 10
+      currentOffsetMin += durationMin + gapMin
       synced++
     } catch (err) {
       logger.error('sync-tasks: event creation failed for task', {
@@ -159,7 +160,8 @@ export async function POST(request: NextRequest) {
         error: err instanceof Error ? err.message : String(err),
       })
       errors.push(task.id)
-      currentOffsetMin += durationMin + 3
+      const gapMin = task.task_type === 'strategic' ? 15 : 10
+      currentOffsetMin += durationMin + gapMin
     }
   }
 

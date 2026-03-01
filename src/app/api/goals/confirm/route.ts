@@ -235,7 +235,8 @@ export async function POST(request: NextRequest) {
                 goal.title
               )
               await adminSupabase.from('tasks').update({ calendar_event_id: eventId }).eq('id', task.id)
-              currentOffsetMin += durationMin + 3 // 3-min buffer between tasks
+              const gapMin = task.task_type === 'strategic' ? 15 : 10
+              currentOffsetMin += durationMin + gapMin
               totalSynced++
             } catch (err) {
               logger.error('[FIX] calendar sync: event creation failed for task', {
@@ -243,7 +244,8 @@ export async function POST(request: NextRequest) {
                 scheduledDate: task.scheduled_date,
                 error: err instanceof Error ? err.message : String(err),
               })
-              currentOffsetMin += durationMin + 3
+              const gapMin = task.task_type === 'strategic' ? 15 : 10
+              currentOffsetMin += durationMin + gapMin
             }
           }
         }
