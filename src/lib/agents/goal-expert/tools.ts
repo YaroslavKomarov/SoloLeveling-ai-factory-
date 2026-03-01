@@ -10,6 +10,7 @@
  */
 import { tool } from 'ai'
 import { z } from 'zod'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createLogger } from '@/lib/logger'
 
@@ -177,6 +178,11 @@ export const createNote = tool({
       }
 
       logger.info('[goal-expert] note created', { noteId: note.id, title: note.title })
+
+      revalidatePath('/app/knowledge')
+      revalidatePath(`/app/goals/${goalId}`)
+      logger.debug('[goal-expert] revalidatePath triggered', { goalId, noteId: note.id })
+
       return { noteId: note.id, path: note.path, title: note.title, success: true }
 
     } catch (err) {

@@ -9,6 +9,7 @@
  * POST returns: { note: NoteRow }
  */
 import { NextResponse, type NextRequest } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { listNotesByPrefix, createNote } from '@/lib/supabase/notes'
 import { createLogger } from '@/lib/logger'
@@ -135,6 +136,9 @@ export async function POST(request: NextRequest, { params }: Props) {
     })
 
     logger.info('goal note created', { userId: user.id, goalId, noteId: note.id, notePath })
+
+    revalidatePath('/app/knowledge')
+    logger.debug('revalidatePath /app/knowledge triggered', { goalId, noteId: note.id })
 
     return NextResponse.json({ note }, { status: 201 })
   } catch (error) {

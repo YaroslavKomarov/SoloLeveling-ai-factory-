@@ -6,6 +6,7 @@
  * to return notes that link to the specified title.
  */
 import { NextResponse, type NextRequest } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getAllNotesByUser, createNote, getBacklinks } from '@/lib/supabase/notes'
 import { createLogger } from '@/lib/logger'
@@ -74,6 +75,10 @@ export async function POST(request: NextRequest) {
     })
 
     logger.info('Note created', { userId: user.id, noteId: note.id, path: note.path })
+
+    revalidatePath('/app/knowledge')
+    logger.debug('revalidatePath /app/knowledge triggered', { noteId: note.id })
+
     return NextResponse.json({ note }, { status: 201 })
 
   } catch (error) {
