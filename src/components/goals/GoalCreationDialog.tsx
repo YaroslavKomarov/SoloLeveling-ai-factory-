@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Send, RefreshCw, FileText } from 'lucide-react'
+import { X, Send, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
 import { QuestEditor } from './QuestEditor'
@@ -30,10 +30,10 @@ export function GoalCreationDialog() {
 
   const [inputValue, setInputValue] = useState('')
   const [editedContent, setEditedContent] = useState('')
-  const [isCreatingNote, setIsCreatingNote] = useState(false)
   // T07: progressive disclosure — button only shown after agent calls readyToGenerateQuests
   const [isReadyToGenerate, setIsReadyToGenerate] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const autoSaveCalledRef = useRef(false)
 
   // Sync edited content when synthesis note arrives
   useEffect(() => {
@@ -41,6 +41,23 @@ export function GoalCreationDialog() {
       setEditedContent(synthesisNote.content)
     }
   }, [synthesisNote])
+
+  // Auto-trigger synthesis when goal is confirmed
+  useEffect(() => {
+    if (phase === 'confirmed' && createdGoalId) {
+      void autoCreateSummaryNote()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, createdGoalId])
+
+  // Auto-save note when synthesis content arrives
+  useEffect(() => {
+    if (phase === 'synthesis' && synthesisNote && editedContent.trim() && !autoSaveCalledRef.current) {
+      autoSaveCalledRef.current = true
+      void autoSaveNote()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, synthesisNote, editedContent])
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -325,27 +342,29 @@ export function GoalCreationDialog() {
     closeDialog()
   }
 
-  const handleRequestSynthesis = async () => {
-    logger.debug('[GoalCreationDialog] synthesis requested', { goalId: createdGoalId })
-    const prompt = 'Please create a note summarizing our goal planning conversation.'
-    addMessage({ role: 'user', content: prompt })
-    await callAgent(prompt)
+  const autoCreateSummaryNote = async () => {
+    try {
+      const prompt = 'Please create a note summarizing our goal planning conversation.'
+      addMessage({ role: 'user', content: prompt })
+      await callAgent(prompt)
+    } catch (err) {
+      logger.error('[GoalCreationDialog] auto-synthesis failed', { error: err instanceof Error ? err.message : String(err) })
+      handleClose()
+    }
   }
 
-  const handleCreateNote = async () => {
+  const autoSaveNote = async () => {
     if (!createdGoalId || !editedContent.trim()) return
-    setIsCreatingNote(true)
     try {
       await fetch(`/api/notes/goal/${createdGoalId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: editedContent }),
       })
-      logger.info('[GoalCreationDialog] synthesis note created', { goalId: createdGoalId })
+      logger.info('[GoalCreationDialog] auto summary note created', { goalId: createdGoalId })
     } catch (err) {
-      logger.error('[GoalCreationDialog] synthesis note creation failed', { goalId: createdGoalId, error: err instanceof Error ? err.message : String(err) })
+      logger.error('[GoalCreationDialog] auto note save failed', { error: err instanceof Error ? err.message : String(err) })
     } finally {
-      setIsCreatingNote(false)
       handleClose()
     }
   }
@@ -514,51 +533,27 @@ export function GoalCreationDialog() {
 
             {/* CONFIRMED phase */}
             {phase === 'confirmed' && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', flex: 1, justifyContent: 'center' }}>
                 <span style={{ fontFamily: 'Cinzel, serif', fontSize: '1.125rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#ffffff' }}>
                   Goal Created
                 </span>
                 <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: 'rgba(255,255,255,0.5)' }}>
                   Your 90-day journey begins.
                 </span>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.875rem', color: 'rgba(255,255,255,0.4)' }}>
-                    Save key insights from this planning session?
+                {isLoading && (
+                  <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.8125rem', color: 'rgba(255,255,255,0.35)' }}>
+                    Saving summary note...
                   </span>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <Button
-                      onClick={() => void handleRequestSynthesis()}
-                      isLoading={isLoading}
-                      style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
-                    >
-                      <FileText size={14} />
-                      Create summary note
-                    </Button>
-                    <Button variant="ghost" onClick={handleClose} style={{ fontSize: '0.8125rem' }}>
-                      Skip
-                    </Button>
-                  </div>
-                </div>
+                )}
               </div>
             )}
 
-            {/* SYNTHESIS phase: editable note content */}
-            {phase === 'synthesis' && synthesisNote && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
-                <div>
-                  <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.875rem', color: 'rgba(255,255,255,0.5)', margin: '0 0 0.25rem' }}>
-                    Note title: <em>{synthesisNote.title}</em>
-                  </p>
-                  <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.8125rem', color: 'rgba(255,255,255,0.35)', margin: 0 }}>
-                    Review and edit before saving to your Knowledge Base.
-                  </p>
-                </div>
-                <Textarea
-                  value={editedContent}
-                  onChange={(e) => setEditedContent(e.target.value)}
-                  rows={12}
-                  style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '0.8125rem', flex: 1 }}
-                />
+            {/* SYNTHESIS phase: auto-saving, no user interaction needed */}
+            {phase === 'synthesis' && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+                <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.875rem', fontFamily: 'Cormorant, Georgia, serif' }}>
+                  Creating summary note...
+                </span>
               </div>
             )}
 
@@ -671,31 +666,6 @@ export function GoalCreationDialog() {
             </div>
           )}
 
-          {phase === 'synthesis' && (
-            <div
-              style={{
-                padding: '0.875rem 1.25rem',
-                borderTop: '1px solid rgba(255,255,255,0.1)',
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '0.5rem',
-                flexShrink: 0,
-              }}
-            >
-              <Button variant="ghost" onClick={handleClose} style={{ fontSize: '0.8125rem' }}>
-                Skip
-              </Button>
-              <Button
-                onClick={() => void handleCreateNote()}
-                isLoading={isCreatingNote}
-                disabled={!editedContent.trim()}
-                style={{ fontSize: '0.8125rem', display: 'flex', alignItems: 'center', gap: '0.375rem' }}
-              >
-                <FileText size={14} />
-                Save note
-              </Button>
-            </div>
-          )}
         </motion.div>
 
         {/* Blink keyframe */}
