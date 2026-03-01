@@ -94,10 +94,25 @@ export const searchGoalNotes = tool({
         })
       )
 
-      // Filter to goal-scoped notes (path contains goalId or is in the sphere/goal path)
-      const goalResults = allResults.filter(
-        (r) => r.path.includes(goalId)
-      )
+      // Build path prefix from sphere/goal names to filter correctly
+      // (goalId is a UUID and will never appear in the file path)
+      const { data: goal } = await supabase
+        .from('goals')
+        .select('title, sphere_id')
+        .eq('id', goalId)
+        .single()
+
+      const { data: sphere } = goal
+        ? await supabase.from('spheres').select('name').eq('id', goal.sphere_id).single()
+        : { data: null }
+
+      const pathPrefix = sphere && goal ? `${sphere.name}/${goal.title}/` : null
+      logger.debug('[goal-expert] searchGoalNotes path prefix', { goalId, pathPrefix })
+
+      // Filter to goal-scoped notes using actual path prefix
+      const goalResults = pathPrefix
+        ? allResults.filter((r) => r.path.startsWith(pathPrefix))
+        : allResults
 
       // If no goal-scoped results, return all results (general KB search)
       const results = goalResults.length > 0 ? goalResults : allResults
@@ -193,7 +208,73 @@ export const createNote = tool({
 })
 
 // =============================================================
-// Tool 3: updateTask
+// Tool 3: listGoalNotes
+// Lists all notes in the goal's KB path (no vector search needed).
+// =============================================================
+
+export const listGoalNotes = tool({
+  description:
+    'List all notes in the knowledge base for this goal. ' +
+    'Returns titles, paths, and short previews. ' +
+    'Use when the user asks to see, list, or browse their notes for this goal. ' +
+    'No query needed — fetches all notes directly.',
+  inputSchema: z.object({
+    userId: z.string().describe('The user ID'),
+    goalId: z.string().describe('The goal ID'),
+  }),
+  execute: async ({ userId, goalId }) => {
+    logger.debug('[goal-expert] listGoalNotes called', { userId, goalId })
+    try {
+      const supabase = await createClient()
+
+      const { data: goal } = await supabase
+        .from('goals')
+        .select('title, sphere_id')
+        .eq('id', goalId)
+        .eq('user_id', userId)
+        .single()
+
+      if (!goal) return { notes: [], error: 'Goal not found' }
+
+      const { data: sphere } = await supabase
+        .from('spheres')
+        .select('name')
+        .eq('id', goal.sphere_id)
+        .single()
+
+      const pathPrefix = sphere ? `${sphere.name}/${goal.title}/` : goal.title + '/'
+
+      const { data: notes, error } = await supabase
+        .from('notes')
+        .select('id, title, path, content')
+        .eq('user_id', userId)
+        .ilike('path', `${pathPrefix}%`)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        logger.error('[goal-expert] listGoalNotes failed', { error: error.message })
+        return { notes: [], error: error.message }
+      }
+
+      const results = (notes ?? []).map((n) => ({
+        noteId: n.id,
+        title: n.title,
+        path: n.path,
+        preview: n.content.slice(0, 150),
+      }))
+
+      logger.debug('[goal-expert] listGoalNotes result', { count: results.length })
+      return { notes: results, count: results.length }
+
+    } catch (err) {
+      logger.error('[goal-expert] listGoalNotes error', { error: err instanceof Error ? err.message : String(err) })
+      return { notes: [], error: 'Failed to list notes' }
+    }
+  },
+})
+
+// =============================================================
+// Tool 4: updateTask
 // Updates a task's title or description.
 // =============================================================
 

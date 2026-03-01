@@ -7,7 +7,7 @@ import { streamText } from 'ai'
 import { getFastModel } from '@/lib/ai/provider'
 import { createLogger } from '@/lib/logger'
 import { KNOWLEDGE_RAG_SYSTEM_PROMPT } from './prompt'
-import { searchNotes, getNoteContent, getBacklinkedNotes } from './tools'
+import { searchNotes, getNoteContent, getBacklinkedNotes, listAllNotes } from './tools'
 
 const logger = createLogger('KnowledgeRag')
 
@@ -59,6 +59,7 @@ export async function runKnowledgeRag(
         searchNotes,
         getNoteContent,
         getBacklinkedNotes,
+        listAllNotes,
       },
       maxSteps: 6,
       onStepFinish: ({ toolResults }) => {

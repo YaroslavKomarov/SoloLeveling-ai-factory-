@@ -12,7 +12,7 @@ import { streamText } from 'ai'
 import { getSmartModel } from '@/lib/ai/provider'
 import { createLogger } from '@/lib/logger'
 import { buildGoalExpertSystemPrompt } from './prompt'
-import { searchGoalNotes, createNote, updateTask } from './tools'
+import { searchGoalNotes, createNote, updateTask, listGoalNotes } from './tools'
 import { createClient } from '@/lib/supabase/server'
 
 const logger = createLogger('GoalExpert')
@@ -121,6 +121,7 @@ export async function runGoalExpert(params: {
         searchGoalNotes,
         createNote,
         updateTask,
+        listGoalNotes,
       },
       maxSteps: 5,
       onStepFinish: ({ toolResults }) => {

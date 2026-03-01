@@ -148,7 +148,54 @@ export const getNoteContent = tool({
 })
 
 // =============================================================
-// Tool 3: getBacklinkedNotes
+// Tool 3: listAllNotes
+// Lists all notes in the user's KB (no vector search needed).
+// =============================================================
+
+export const listAllNotes = tool({
+  description:
+    'List all notes in the user\'s knowledge base. ' +
+    'Returns titles, paths, and short previews of all notes. ' +
+    'Use when the user wants to browse or enumerate their notes without a specific query.',
+  inputSchema: z.object({
+    userId: z.string().describe('The user ID'),
+    limit: z.number().int().min(1).max(50).optional().default(20),
+  }),
+  execute: async ({ userId, limit = 20 }) => {
+    logger.debug('listAllNotes called', { userId, limit })
+    try {
+      const supabase = await createClient()
+      const { data: notes, error } = await supabase
+        .from('notes')
+        .select('id, title, path, content')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+      if (error) {
+        logger.error('listAllNotes failed', { userId, error: error.message })
+        return { notes: [], error: error.message }
+      }
+
+      const results = (notes ?? []).map((n) => ({
+        noteId: n.id,
+        title: n.title,
+        path: n.path,
+        preview: n.content.slice(0, 150),
+      }))
+
+      logger.debug('listAllNotes result', { userId, count: results.length })
+      return { notes: results, count: results.length }
+
+    } catch (err) {
+      logger.error('listAllNotes error', { userId, error: err instanceof Error ? err.message : String(err) })
+      return { notes: [], error: 'Failed to list notes' }
+    }
+  },
+})
+
+// =============================================================
+// Tool 4: getBacklinkedNotes
 // Finds notes that link back to a given title (graph traversal).
 // =============================================================
 
