@@ -129,6 +129,7 @@ export async function POST(request: NextRequest) {
         fatigue_type: fatigueType,
         repetition_index: t.repetitionIndex ?? null,
         sequence_index: t.sequenceIndex ?? null,
+        description: t.description ?? null,
         duration_minutes: t.taskType === 'strategic' ? 27 : 12,
       }
     })
@@ -229,7 +230,7 @@ export async function POST(request: NextRequest) {
             try {
               const eventId = await createTaskEvent(
                 tokens.access_token,
-                { ...task, duration_minutes: durationMin },
+                { ...task, duration_minutes: durationMin, description: task.description ?? null },
                 eventStartStr,
                 timezone,
                 goal.title

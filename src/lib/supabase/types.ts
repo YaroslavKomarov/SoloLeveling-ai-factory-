@@ -187,6 +187,7 @@ export interface TaskRow {
   total_occurrences: number
   sequence_index: number | null     // compaction order (strategic only)
   completion_note: string | null    // required for strategic tasks, optional for regular
+  description: string | null        // step-by-step guidance set at creation, editable via goal-expert
   duration_minutes: number          // estimated task duration (regular=12, strategic=27)
   calendar_event_id: string | null  // Google Calendar event ID, null if not synced
   created_at: string
@@ -206,6 +207,7 @@ export type TaskInsert = Omit<TaskRow, 'id' | 'created_at' | 'updated_at'> & {
   total_occurrences?: number
   sequence_index?: number | null
   completion_note?: string | null
+  description?: string | null
   duration_minutes?: number
   calendar_event_id?: string | null
 }
@@ -305,6 +307,8 @@ export interface QuestDraft {
   unit: string
   orderIndex: number
   fatigueType?: FatigueType  // which fatigue bar tasks in this quest affect
+  regularTaskDescription?: string   // step-by-step guidance for the repeating regular task
+  strategicTaskDescriptions?: string[]  // per-session guidance for each strategic task (same order as strategic task titles)
 }
 
 /** One entry in the 90-day task plan (pre-insert) */
@@ -318,6 +322,7 @@ export interface TaskPlanEntry {
   fatigueType?: FatigueType  // which bar to affect; defaults to 'intellectual' if omitted
   repetitionIndex?: number   // regular tasks only
   sequenceIndex?: number     // strategic tasks only
+  description?: string       // step-by-step guidance from the goal-generator agent
 }
 
 /** Fatigue projection per day */

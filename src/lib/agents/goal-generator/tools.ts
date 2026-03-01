@@ -85,10 +85,22 @@ export const generateQuests = tool({
             'BAD: "Study JavaScript" | GOOD: "Complete freeCodeCamp JS array methods exercises (10 min)". ' +
             'Empty string only if regularTaskCount is 0.'
           ),
+          regularTaskDescription: z.string().describe(
+            'Step-by-step description for the repeating regular task: 3–5 concrete actions the user should take each session. ' +
+            'Include specific names, tools, techniques, and success criteria. ' +
+            'Example: "1. Open YouTube, search for \'Sonic pen spinning tutorial\'. 2. Watch at 0.5x speed. 3. Attempt the trick 10 times. 4. Note what went wrong in 1 sentence." ' +
+            'Empty string only if regularTaskCount is 0.'
+          ),
           strategicTaskTitles: z.array(z.string().min(15)).describe(
             'Titles for each strategic task following [VERB] + [SPECIFIC OBJECT] + [DELIVERABLE]. ' +
             'Each title must be ≥ 15 characters and state a concrete deliverable. ' +
             'BAD: "Analyze data" | GOOD: "Analyse competitor pricing data → comparison table in notes". ' +
+            'Length must equal strategicTaskCount. Empty array if strategicTaskCount is 0.'
+          ),
+          strategicTaskDescriptions: z.array(z.string()).describe(
+            'Step-by-step description for each strategic task (same order as strategicTaskTitles). ' +
+            'Each description: 3–5 concrete actions with specific resources, expected output, and success criteria. ' +
+            'Example: "1. Open Notion, create a new page titled \'Competitor Analysis\'. 2. List 5 competitors from memory. 3. For each, note price and key feature. 4. Write a 2-sentence conclusion. Result: comparison table saved." ' +
             'Length must equal strategicTaskCount. Empty array if strategicTaskCount is 0.'
           ),
         })
@@ -106,6 +118,8 @@ export const generateQuests = tool({
     logger.debug('[goal-generator] generated tasks', {
       regularTaskTitles: quests?.map(q => q.regularTaskTitle).filter(Boolean) ?? [],
       strategicTaskTitles: quests?.flatMap(q => q.strategicTaskTitles) ?? [],
+      regularDescriptionLengths: quests?.map(q => q.regularTaskDescription?.length ?? 0) ?? [],
+      strategicDescriptionCounts: quests?.map(q => q.strategicTaskDescriptions?.length ?? 0) ?? [],
     })
     return { phase: 'planning', quests }
   },

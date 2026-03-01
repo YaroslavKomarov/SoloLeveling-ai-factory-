@@ -280,12 +280,12 @@ export const listGoalNotes = tool({
 
 export const updateTask = tool({
   description:
-    'Update a task\'s title or description. Always propose the change to the user first ' +
-    'and only call this tool after the user approves. Use for rephrasing or clarifying tasks.',
+    'Update a task\'s title or step-by-step description. Always propose the change to the user first ' +
+    'and only call this tool after the user approves. Use for rephrasing, clarifying, or adding specific steps to a task.',
   inputSchema: z.object({
     taskId: z.string().describe('The UUID of the task to update'),
     newTitle: z.string().describe('The new task title'),
-    newDescription: z.string().optional().describe('Optional new description or completion note guidance'),
+    newDescription: z.string().optional().describe('Optional new step-by-step description (3–5 concrete actions the user should take)'),
   }),
   execute: async ({ taskId, newTitle, newDescription }) => {
     logger.debug('[goal-expert] tool called', { tool: 'updateTask', taskId })
@@ -295,7 +295,7 @@ export const updateTask = tool({
 
       const updates: Record<string, string> = { title: newTitle }
       if (newDescription) {
-        updates.completion_note = newDescription
+        updates.description = newDescription
       }
 
       const { data: task, error } = await supabase

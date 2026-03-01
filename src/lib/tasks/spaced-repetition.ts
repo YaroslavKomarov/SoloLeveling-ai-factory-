@@ -182,6 +182,7 @@ export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
             fatigueCost: FATIGUE_REGULAR,
             fatigueType: ft,
             repetitionIndex: di,  // 0-6 Ebbinghaus index
+            description: quest.regularTaskDescription ?? undefined,
           })
 
           const day = ensureDay(date)
@@ -210,6 +211,7 @@ export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
           fatigueCost: FATIGUE_STRATEGIC,
           fatigueType: ft,
           sequenceIndex: si,
+          description: quest.strategicTaskDescriptions?.[si] ?? undefined,
         })
 
         const day = ensureDay(date)

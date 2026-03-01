@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
   // Fetch tomorrow's scheduled tasks without a calendar_event_id
   const { data: tasks, error: tasksError } = await supabase
     .from('tasks')
-    .select('id, title, task_type, duration_minutes, scheduled_date, goal_id')
+    .select('id, title, task_type, duration_minutes, scheduled_date, goal_id, description')
     .eq('user_id', userId)
     .eq('scheduled_date', date)
     .eq('status', 'scheduled')
@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
     try {
       const eventId = await createTaskEvent(
         tokens.access_token,
-        { ...task, duration_minutes: durationMin },
+        { ...task, duration_minutes: durationMin, description: (task as { description?: string | null }).description ?? null },
         eventStartStr,
         timezone,
         goalTitleMap[task.goal_id] ?? undefined

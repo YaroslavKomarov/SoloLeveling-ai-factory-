@@ -229,12 +229,16 @@ export function GoalCreationDialog() {
           regularTaskCount: number
           strategicTaskCount: number
           fatigueType?: 'physical' | 'emotional' | 'intellectual'
+          regularTaskDescription?: string
+          strategicTaskDescriptions?: string[]
         }>).map((q, i) => ({
           title: q.title,
           targetValue: q.targetValue,
           unit: q.unit,
           orderIndex: i,
           fatigueType: q.fatigueType,
+          regularTaskDescription: q.regularTaskDescription,
+          strategicTaskDescriptions: q.strategicTaskDescriptions,
         }))
 
         const agentTaskCounts = (r.quests as Array<{

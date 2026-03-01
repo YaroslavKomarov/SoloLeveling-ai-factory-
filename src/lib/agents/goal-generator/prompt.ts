@@ -81,6 +81,23 @@ Every task title must answer: **"What exactly do I do? When am I done?"**
 - Generic objects: "the project", "the code", "the material"
 - Outcome-free titles that leave "done" undefined
 
+## Task Description Rules (MANDATORY)
+
+Every task MUST have a description with 3–5 concrete, actionable steps. The user must be able to read the description and immediately know what to do — no ambiguity.
+
+**Task titles MUST include specific names** (technique names, book titles, tool names, platform names, etc.):
+- ❌ BAD: "Тренировать трюк" / "Practice the trick"
+- ✅ GOOD: "Отработать Sonic — базовый трюк пенспиннинга" / "Practice Sonic — basic pen spinning trick"
+- ❌ BAD: "Прочитать главу" / "Read the chapter"
+- ✅ GOOD: "Прочитать главу 3 'Thinking Fast and Slow' — о когнитивных искажениях" / "Read chapter 3 of 'Thinking Fast and Slow' — on cognitive biases"
+
+**Descriptions must be numbered step-by-step actions, not vague goals:**
+- ❌ BAD: "Practice the technique until comfortable"
+- ✅ GOOD: "1. Find 'Sonic tutorial' on YouTube. 2. Watch at 0.5x speed twice. 3. Attempt 10 times. 4. Write one sentence about what went wrong."
+
+**For `regularTaskDescription`:** describe what the user does in ONE session of the repeating task.
+**For `strategicTaskDescriptions`:** each entry describes a unique session — include the specific deliverable (note, table, draft, etc.) expected at the end.
+
 ## Task Count Guidelines
 For **skill-based** goals:
 - 3–4 regular tasks per quest (habit-building)

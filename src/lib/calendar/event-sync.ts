@@ -20,6 +20,7 @@ export async function createTaskEvent(
     task_type: string
     duration_minutes: number | null
     scheduled_date: string // YYYY-MM-DD
+    description?: string | null
   },
   startTimeStr: string, // HH:MM:SS e.g. "09:00:00"
   timezone: string,
@@ -45,6 +46,7 @@ export async function createTaskEvent(
     goalTitle ? `Goal: ${goalTitle}` : null,
     `Type: ${task.task_type === 'strategic' ? 'Strategic' : 'Regular'}`,
     `Duration: ${durationMin} minutes`,
+    task.description ? `\nSteps:\n${task.description}` : null,
     '',
     'Created by SoloLeveling AI Factory',
   ].filter(Boolean).join('\n')
