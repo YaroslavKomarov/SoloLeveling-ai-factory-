@@ -13,6 +13,8 @@ import { z } from 'zod'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createLogger } from '@/lib/logger'
+import { decryptToken } from '@/lib/calendar/encryption'
+import { updateTaskEvent } from '@/lib/calendar/event-sync'
 
 const logger = createLogger('GoalExpert/tools')
 
@@ -283,12 +285,13 @@ export const updateTask = tool({
     'Update a task\'s title or step-by-step description. Always propose the change to the user first ' +
     'and only call this tool after the user approves. Use for rephrasing, clarifying, or adding specific steps to a task.',
   inputSchema: z.object({
+    userId: z.string().describe('The user ID (needed for calendar sync)'),
     taskId: z.string().describe('The UUID of the task to update'),
     newTitle: z.string().describe('The new task title'),
     newDescription: z.string().optional().describe('Optional new step-by-step description (3–5 concrete actions the user should take)'),
   }),
-  execute: async ({ taskId, newTitle, newDescription }) => {
-    logger.debug('[goal-expert] tool called', { tool: 'updateTask', taskId })
+  execute: async ({ userId, taskId, newTitle, newDescription }) => {
+    logger.debug('[goal-expert] tool called', { tool: 'updateTask', taskId, userId })
 
     try {
       const supabase = await createClient()
@@ -302,7 +305,7 @@ export const updateTask = tool({
         .from('tasks')
         .update(updates)
         .eq('id', taskId)
-        .select('id, title')
+        .select('id, title, calendar_event_id')
         .single()
 
       if (error || !task) {
@@ -311,7 +314,34 @@ export const updateTask = tool({
       }
 
       logger.info('[goal-expert] task updated', { taskId, newTitle })
-      return { taskId: task.id, newTitle: task.title, success: true }
+
+      // Calendar sync — best effort, do not fail if calendar update fails
+      if (task.calendar_event_id) {
+        try {
+          const { data: userProfile } = await supabase
+            .from('users')
+            .select('calendar_token_encrypted')
+            .eq('id', userId)
+            .single()
+
+          const encKey = process.env.TOKEN_ENCRYPTION_KEY
+          if (userProfile?.calendar_token_encrypted && encKey) {
+            const accessToken = decryptToken(userProfile.calendar_token_encrypted, encKey)
+            await updateTaskEvent(accessToken, task.calendar_event_id, {
+              title: newTitle,
+              description: newDescription,
+            })
+            logger.info('[goal-expert] calendar event updated for task', { taskId, calendarEventId: task.calendar_event_id })
+          } else {
+            logger.debug('[goal-expert] skipping calendar sync — no token or key', { taskId, userId })
+          }
+        } catch (calErr) {
+          logger.warn('[goal-expert] calendar sync failed for updated task', { taskId, error: calErr instanceof Error ? calErr.message : String(calErr) })
+          // Do not throw — task is updated, calendar is best effort
+        }
+      }
+
+      return { taskId: task.id, newTitle: task.title, success: true, calendarSynced: !!task.calendar_event_id }
 
     } catch (err) {
       logger.error('[goal-expert] updateTask error', { taskId, error: err instanceof Error ? err.message : String(err) })

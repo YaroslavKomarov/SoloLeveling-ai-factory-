@@ -88,6 +88,41 @@ export async function createTaskEvent(
 }
 
 /**
+ * Updates a Google Calendar event's title and/or description.
+ * Only patches the provided fields — start/end times are preserved.
+ */
+export async function updateTaskEvent(
+  accessToken: string,
+  eventId: string,
+  patch: { title?: string; description?: string }
+): Promise<void> {
+  logger.debug('event-sync.update', { eventId, patchKeys: Object.keys(patch) })
+
+  const body: Record<string, string> = {}
+  if (patch.title !== undefined) body.summary = patch.title
+  if (patch.description !== undefined) body.description = patch.description
+
+  if (Object.keys(body).length === 0) return
+
+  const response = await fetch(`${CALENDAR_EVENTS_URL}/${eventId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!response.ok) {
+    const err = await response.text()
+    logger.error('event-sync.update failed', { eventId, status: response.status, error: err })
+    throw new Error(`Calendar event update failed: ${response.status} ${err}`)
+  }
+
+  logger.info('event-sync.update succeeded', { eventId })
+}
+
+/**
  * Deletes a Google Calendar event by event ID.
  */
 export async function deleteTaskEvent(accessToken: string, eventId: string): Promise<void> {

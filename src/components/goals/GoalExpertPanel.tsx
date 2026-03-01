@@ -487,20 +487,48 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
     }
   }
 
-  const sendMessage = useCallback(async () => {
-    const query = inputValue.trim()
+  // sendMessage(displayText?, agentText?) — displayText shown to user, agentText sent to agent
+  // If only displayText provided, same text is used for both.
+  const sendMessage = useCallback(async (displayText?: string, agentText?: string) => {
+    const rawInput = displayText ?? inputValue.trim()
+    const query = rawInput.trim()
     if (!query || isLoading || !activeSessionId || isReadonly) return
+
+    // Parse slash commands — map display text → agent instruction
+    let agentQuery = agentText ?? query
+
+    if (!agentText) {
+      if (query.startsWith('/summary')) {
+        agentQuery =
+          'Please write a concise summary of our conversation so far. ' +
+          'Extract: key insights, decisions made, open questions, action items. ' +
+          'Limit to ~400 words. Format with headers.'
+        windowLogger.debug('[GoalChatWindow] /summary command dispatched', { sessionId: activeSessionId })
+      } else if (query.startsWith('/create-note')) {
+        agentQuery =
+          'Please create a note in my knowledge base summarizing this conversation. ' +
+          'First summarize the key content, then use the createNote tool. ' +
+          'Title should reflect the main topic of our discussion.'
+        windowLogger.debug('[GoalChatWindow] /create-note command dispatched', { sessionId: activeSessionId })
+      } else if (query.startsWith('/change-task')) {
+        const taskName = query.replace('/change-task', '').trim()
+        agentQuery = taskName
+          ? `I want to change the task "${taskName}". Please ask me: what specifically doesn't work about the current wording, what I want to focus on instead. Then propose a new title and description, and ask for my confirmation before updating.`
+          : 'I want to change a task. Please ask me which task and what I want to change about it.'
+        windowLogger.debug('[GoalChatWindow] /change-task command dispatched', { sessionId: activeSessionId, taskName })
+      }
+    }
 
     const sessionId = activeSessionId
     const sessionMessages = messages[sessionId] ?? []
 
-    windowLogger.debug('[GoalChatWindow] message sent', { sessionId, charCount: query.length })
+    windowLogger.debug('[GoalChatWindow] message sent', { sessionId, charCount: query.length, isCommand: query.startsWith('/') })
 
     setInputValue('')
     setStreaming('')
     setLoading(true)
 
-    // Add user message optimistically to UI
+    // Add user message optimistically to UI (show the command text, not the expanded agent prompt)
     const userMsg: GoalChatMessage = {
       id: crypto.randomUUID(),
       session_id: sessionId,
@@ -512,7 +540,7 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
     }
     addMessage(sessionId, userMsg)
 
-    // Save user message to DB
+    // Save user message to DB (store the display text)
     await saveMessage(sessionId, 'user', query)
 
     // Build task context from timer if it's a task session
@@ -534,7 +562,7 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
         body: JSON.stringify({
           goalId,
           sessionId,
-          query,
+          query: agentQuery,
           messages: sessionMessages.map((m) => ({ role: m.role, content: m.content })),
           taskContext,
         }),
@@ -620,7 +648,7 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      sendMessage()
+      void sendMessage()
     }
   }, [sendMessage])
 
@@ -710,21 +738,94 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
         }}
       >
         {activeMessages.length === 0 && !streamingContent && (
-          <div
-            style={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontFamily: 'Cormorant, serif',
-              fontSize: '14px',
-              color: 'rgba(255,255,255,0.2)',
-              textAlign: 'center',
-            }}
-          >
-            {activeSession.session_type === 'task'
-              ? 'Your expert mentor is ready. Describe where you are with this task.'
-              : 'Ask your expert anything about this goal…'}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Command hints — only shown in general sessions */}
+            {activeSession.session_type !== 'task' && (
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderBottom: '1px solid rgba(255,255,255,0.06)',
+                  flexShrink: 0,
+                }}
+              >
+                <p
+                  style={{
+                    fontFamily: 'Cormorant, serif',
+                    color: 'rgba(255,255,255,0.3)',
+                    fontSize: '12px',
+                    marginBottom: '8px',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  Available commands:
+                </p>
+                {[
+                  { cmd: '/summary', desc: 'Summarize this conversation' },
+                  { cmd: '/create-note', desc: 'Save conversation as a KB note' },
+                  { cmd: '/change-task [task name]', desc: 'Rephrase a task title and description' },
+                ].map(({ cmd, desc }) => (
+                  <div
+                    key={cmd}
+                    onClick={() => setInputValue(cmd + ' ')}
+                    style={{
+                      cursor: 'pointer',
+                      marginBottom: '6px',
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      gap: '8px',
+                    }}
+                  >
+                    <code
+                      style={{
+                        color: '#a78bfa',
+                        fontSize: '13px',
+                        fontFamily: 'monospace',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {cmd}
+                    </code>
+                    <span
+                      style={{
+                        color: 'rgba(255,255,255,0.35)',
+                        fontSize: '13px',
+                        fontFamily: 'Cormorant, serif',
+                      }}
+                    >
+                      {desc}
+                    </span>
+                  </div>
+                ))}
+                <p
+                  style={{
+                    fontFamily: 'Cormorant, serif',
+                    color: 'rgba(255,255,255,0.18)',
+                    fontSize: '11px',
+                    marginTop: '8px',
+                  }}
+                >
+                  Note: Only task title/description can be changed via chat. Adding/removing tasks happens in Retrospective.
+                </p>
+              </div>
+            )}
+
+            {/* Empty state message */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontFamily: 'Cormorant, serif',
+                fontSize: '14px',
+                color: 'rgba(255,255,255,0.2)',
+                textAlign: 'center',
+                padding: '24px',
+              }}
+            >
+              {activeSession.session_type === 'task'
+                ? 'Your expert mentor is ready. Describe where you are with this task.'
+                : 'Ask your expert anything about this goal…'}
+            </div>
           </div>
         )}
 
@@ -911,7 +1012,7 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
               }}
             />
             <button
-              onClick={sendMessage}
+              onClick={() => void sendMessage()}
               disabled={!inputValue.trim() || isLoading}
               style={{
                 background: 'none',
