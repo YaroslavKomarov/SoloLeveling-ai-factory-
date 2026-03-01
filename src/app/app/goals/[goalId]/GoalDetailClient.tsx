@@ -2,17 +2,17 @@
 
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, X, MessageSquare, FileText } from 'lucide-react'
+import { ChevronLeft, X, FileText, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Card, CardContent } from '@/components/ui/Card'
 import { Progress } from '@/components/ui/Progress'
 import { QuestItem } from '@/components/goals/QuestItem'
 import { GoalAtRiskBanner } from '@/components/goals/GoalAtRiskBanner'
-import { GoalDialogModal } from '@/components/goals/GoalDialogModal'
 import { GoalNotesModal } from '@/components/goals/GoalNotesModal'
+import { GoalExpertPanel } from '@/components/goals/GoalExpertPanel'
 import { createLogger } from '@/lib/logger'
 import { useGoalsStore } from '@/store/goals'
 import type { GoalRow, QuestRow, TaskRow } from '@/lib/supabase/types'
@@ -131,12 +131,32 @@ const TYPE_PROGRESS_COLOR: Record<GoalRow['goal_type'], 'physical' | 'intellectu
 
 export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDetailClientProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const updateGoal = useGoalsStore(s => s.updateGoal)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
-  const [showExpertDialog, setShowExpertDialog] = useState(false)
   const [showNotesModal, setShowNotesModal] = useState(false)
   const [mounted, setMounted] = useState(false)
+
+  // Tab state — controlled by URL query param
+  const tab = searchParams.get('tab') === 'expert' ? 'expert' : 'goal'
+
+  // Initial task session from query params (when redirected from strategic task start)
+  const newTaskId = searchParams.get('newTaskSession')
+  const newTaskTitle = searchParams.get('newTaskTitle')
+  const initialTaskSession = newTaskId && newTaskTitle
+    ? { taskId: newTaskId, taskTitle: decodeURIComponent(newTaskTitle) }
+    : undefined
+
+  useEffect(() => {
+    logger.debug('[GoalDetailClient] tab switched', { tab })
+  }, [tab])
+
+  useEffect(() => {
+    if (initialTaskSession) {
+      logger.debug('[GoalDetailClient] newTaskSession param detected', { taskId: initialTaskSession.taskId })
+    }
+  }, [initialTaskSession])
 
   useEffect(() => setMounted(true), [])
 
@@ -251,16 +271,45 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
           </div>
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: '0.5rem' }}>
+            {/* Tab buttons: Goal / Expert Chat */}
             <button
-              onClick={() => setShowExpertDialog(true)}
+              onClick={() => {
+                const params = new URLSearchParams(searchParams.toString())
+                params.delete('tab')
+                router.push(`/app/goals/${goal.id}?${params.toString()}`)
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.375rem',
                 background: 'none',
-                border: `1px solid ${TYPE_COLOR[goal.goal_type]}44`,
+                border: tab === 'goal' ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.1)',
                 cursor: 'pointer',
-                color: TYPE_COLOR[goal.goal_type],
+                color: tab === 'goal' ? '#ffffff' : 'rgba(255,255,255,0.4)',
+                fontFamily: 'Cinzel, serif',
+                fontSize: '0.65rem',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                padding: '0.375rem 0.75rem',
+                transition: 'all 0.15s',
+              }}
+            >
+              Goal
+            </button>
+            <button
+              onClick={() => {
+                const params = new URLSearchParams(searchParams.toString())
+                params.set('tab', 'expert')
+                router.push(`/app/goals/${goal.id}?${params.toString()}`)
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.375rem',
+                background: 'none',
+                border: tab === 'expert' ? `1px solid ${TYPE_COLOR[goal.goal_type]}` : `1px solid ${TYPE_COLOR[goal.goal_type]}44`,
+                cursor: 'pointer',
+                color: tab === 'expert' ? TYPE_COLOR[goal.goal_type] : `${TYPE_COLOR[goal.goal_type]}aa`,
                 fontFamily: 'Cinzel, serif',
                 fontSize: '0.65rem',
                 letterSpacing: '0.08em',
@@ -270,7 +319,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
               }}
             >
               <MessageSquare size={12} />
-              Consult Expert
+              Expert Chat
             </button>
             <button
               onClick={() => setShowNotesModal(true)}
@@ -324,13 +373,26 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
         </div>
       </motion.div>
 
+      {/* Expert Chat tab */}
+      {tab === 'expert' && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2 }}
+          style={{ marginBottom: '2rem' }}
+        >
+          <GoalExpertPanel goalId={goal.id} initialTaskSession={initialTaskSession} />
+        </motion.div>
+      )}
+
+      {/* Goal tab content */}
       {/* At-risk banner */}
-      {goal.is_at_risk && goal.status === 'active' && (
+      {tab === 'goal' && goal.is_at_risk && goal.status === 'active' && (
         <GoalAtRiskBanner goalTitle={goal.title} />
       )}
 
       {/* Failed notice */}
-      {goal.status === 'failed' && (
+      {tab === 'goal' && goal.status === 'failed' && (
         <div
           style={{
             marginBottom: '1rem',
@@ -369,7 +431,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
       )}
 
       {/* Quests section */}
-      <section style={{ marginBottom: '2rem' }}>
+      {tab === 'goal' && <section style={{ marginBottom: '2rem' }}>
         <h2
           style={{
             fontFamily: 'Cinzel, serif',
@@ -400,10 +462,10 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
             )}
           </CardContent>
         </Card>
-      </section>
+      </section>}
 
       {/* Upcoming tasks */}
-      <section style={{ marginBottom: '2rem' }}>
+      {tab === 'goal' && <section style={{ marginBottom: '2rem' }}>
         <h2
           style={{
             fontFamily: 'Cinzel, serif',
@@ -482,31 +544,16 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
             ))}
           </div>
         )}
-      </section>
-
+      </section>}
 
       {/* Cancel goal */}
-      {goal.status === 'active' && (
+      {tab === 'goal' && goal.status === 'active' && (
         <div>
           <Button variant="destructive" size="sm" onClick={() => setShowCancelConfirm(true)}>
             Cancel Goal
           </Button>
         </div>
       )}
-
-      {/* Expert Consultation modal */}
-      <AnimatePresence>
-        {showExpertDialog && (
-          <GoalDialogModal
-            goal={goal}
-            quests={quests}
-            allTasks={allTasks}
-            progress={overallProgress}
-            sphereName={sphereName}
-            onClose={() => setShowExpertDialog(false)}
-          />
-        )}
-      </AnimatePresence>
 
       {/* Goal Notes modal */}
       <AnimatePresence>
