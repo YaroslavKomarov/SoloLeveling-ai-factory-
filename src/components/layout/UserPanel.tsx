@@ -128,6 +128,7 @@ export function UserPanel({
 
       {/* Left: Level avatar square — spans full panel height */}
       <div
+        className="up-avatar"
         style={{
           width: '90px',
           flexShrink: 0,
@@ -178,6 +179,7 @@ export function UserPanel({
 
       {/* Middle: Two rows — XP bar + fatigue bars */}
       <div
+        className="up-content"
         style={{
           flex: 1,
           display: 'flex',
@@ -264,7 +266,7 @@ export function UserPanel({
         </div>
 
         {/* Row 2: Fatigue bars */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+        <div className="up-fatigue-row" style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
           <AnimatedFatigueBar
             icon={<Dumbbell size={13} strokeWidth={1.5} />}
             label="Physical"
@@ -288,6 +290,7 @@ export function UserPanel({
 
       {/* Right: Settings — spans full panel height */}
       <Link
+        className="up-settings"
         href="/app/settings"
         style={{
           width: '90px',
@@ -305,6 +308,7 @@ export function UserPanel({
       >
         <Settings size={18} strokeWidth={1.5} />
         <span
+          className="up-settings-label"
           style={{
             fontSize: '0.625rem',
             fontFamily: 'Cinzel, serif',
@@ -315,6 +319,16 @@ export function UserPanel({
           Settings
         </span>
       </Link>
+      <style>{`
+        @media (max-width: 767px) {
+          .up-avatar { width: 60px !important; }
+          .up-settings { width: 44px !important; }
+          .up-settings-label { display: none !important; }
+          .up-content { padding: 0.5rem 0.75rem !important; }
+          .up-fatigue-row { flex-wrap: wrap !important; gap: 0.5rem !important; }
+          .up-fatigue-row > div { flex: 1 1 calc(50% - 0.25rem) !important; min-width: 0 !important; }
+        }
+      `}</style>
     </aside>
   )
 }

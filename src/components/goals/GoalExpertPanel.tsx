@@ -25,7 +25,8 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Plus, Trash2, Loader2, Send, Lock, MessageSquare, Bookmark } from 'lucide-react'
+import { Plus, Trash2, Loader2, Send, Lock, MessageSquare, Bookmark, List, X } from 'lucide-react'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useGoalExpertStore } from '@/store/goal-expert'
@@ -1108,6 +1109,9 @@ export function GoalExpertPanel({ goalId, initialTaskSession }: GoalExpertPanelP
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTaskSession, sessions, goalId])
 
+  const isMobile = useIsMobile()
+  const [showSessionList, setShowSessionList] = useState(false)
+
   return (
     <div
       style={{
@@ -1115,10 +1119,52 @@ export function GoalExpertPanel({ goalId, initialTaskSession }: GoalExpertPanelP
         height: '600px',
         border: '1px solid rgba(255,255,255,0.06)',
         backgroundColor: 'rgba(10,12,16,0.6)',
+        position: 'relative',
       }}
     >
-      <GoalChatSessionList goalId={goalId} />
-      <GoalChatWindow goalId={goalId} />
+      {/* Session list: always visible on desktop; absolute overlay on mobile */}
+      <div
+        style={{
+          flexShrink: 0,
+          borderRight: '1px solid rgba(255,255,255,0.08)',
+          display: isMobile && !showSessionList ? 'none' : 'flex',
+          flexDirection: 'column',
+          ...(isMobile ? {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            bottom: 0,
+            zIndex: 10,
+            backgroundColor: '#0a0c10',
+          } : {}),
+        }}
+      >
+        <GoalChatSessionList goalId={goalId} />
+        {isMobile && (
+          <button
+            onClick={() => setShowSessionList(false)}
+            style={{ position: 'absolute', top: '12px', right: '12px', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: '4px', display: 'flex', alignItems: 'center' }}
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {/* Chat window: full-width on mobile */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        {isMobile && (
+          <div style={{ padding: '8px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            <button
+              onClick={() => setShowSessionList(true)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: '4px', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'Cinzel, serif', fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase' }}
+            >
+              <List size={14} />
+              Sessions
+            </button>
+          </div>
+        )}
+        <GoalChatWindow goalId={goalId} />
+      </div>
     </div>
   )
 }

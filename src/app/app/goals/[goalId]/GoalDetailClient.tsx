@@ -221,6 +221,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
         style={{ marginBottom: '2rem' }}
       >
         <div
+          className="gd-title-row"
           style={{
             display: 'flex',
             alignItems: 'flex-start',
@@ -230,6 +231,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
           }}
         >
           <h1
+            className="gd-title"
             style={{
               fontFamily: 'Cinzel, serif',
               fontSize: '1.75rem',
@@ -257,8 +259,8 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
           </p>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+        <div className="gd-meta-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <div className="gd-date-info" style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
             <span style={{ fontFamily: 'Orbitron, monospace', fontSize: '1.5rem', color: goal.status === 'active' ? '#ffffff' : 'rgba(255,255,255,0.4)' }}>
               {daysLeft}
               <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.875rem', marginLeft: '0.375rem', color: 'rgba(255,255,255,0.4)' }}>
@@ -270,7 +272,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
             </span>
           </div>
           {/* Action buttons */}
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div className="gd-action-buttons" style={{ display: 'flex', gap: '0.5rem' }}>
             {/* Tab buttons: Goal / Expert Chat */}
             <button
               onClick={() => {
@@ -630,6 +632,33 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
         </AnimatePresence>,
         document.body
       )}
+
+      <style>{`
+        @media (max-width: 767px) {
+          .gd-title-row {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 0.5rem !important;
+          }
+          .gd-title {
+            font-size: 1.25rem !important;
+          }
+          .gd-meta-row {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 0.75rem !important;
+          }
+          .gd-action-buttons {
+            width: 100% !important;
+            flex-wrap: wrap !important;
+          }
+          .gd-action-buttons > button {
+            flex: 1 !important;
+            justify-content: center !important;
+            min-width: 0 !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }

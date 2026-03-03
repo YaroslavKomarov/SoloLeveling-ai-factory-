@@ -57,6 +57,20 @@ export function LevelUpModal() {
             cursor: 'pointer',
           }}
         >
+          <style>{`
+            @media (max-width: 767px) {
+              .levelup-card {
+                min-width: 0 !important;
+                width: 88vw !important;
+                padding: 2rem 1.5rem !important;
+                box-sizing: border-box !important;
+              }
+              .levelup-number {
+                font-size: 3.5rem !important;
+              }
+            }
+          `}</style>
+
           {/* Particle burst canvas */}
           <ParticleBurst />
 
@@ -66,6 +80,7 @@ export function LevelUpModal() {
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.9, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 200, damping: 25 }}
+            className="levelup-card"
             onClick={(e) => e.stopPropagation()}
             style={{
               position: 'relative',
@@ -108,6 +123,7 @@ export function LevelUpModal() {
               transition={{ delay: 0.5, type: 'spring', stiffness: 300, damping: 20 }}
             >
               <span
+                className="levelup-number"
                 style={{
                   fontFamily: 'Orbitron, monospace',
                   fontSize: '5rem',
