@@ -37,8 +37,12 @@ vi.mock('../MarkdownRenderer', () => ({
   MarkdownRenderer: () => <div data-testid="markdown-renderer" />,
 }))
 
-vi.mock('../RagChatPanel', () => ({
-  RagChatPanel: () => <div data-testid="rag-chat-panel" />,
+vi.mock('../KbChatPanel', () => ({
+  KbChatPanel: () => <div data-testid="kb-chat-panel" />,
+}))
+
+vi.mock('@/hooks/useIsMobile', () => ({
+  useIsMobile: vi.fn().mockReturnValue(false),
 }))
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -103,8 +107,6 @@ describe('KnowledgeShell — note creation modal', () => {
       selectedNote: null,
       isEditing: true,
       isSaving: false,
-      chatMessages: [],
-      isChatLoading: false,
     })
   })
 

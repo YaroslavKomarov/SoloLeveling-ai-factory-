@@ -298,6 +298,38 @@ export type GoalChatMessageInsert = Omit<GoalChatMessageRow, 'id' | 'created_at'
   is_compressed_summary?: boolean
 }
 
+// =============================================================
+// Phase 8: KB Chat Session types
+// =============================================================
+
+export interface KbChatSessionRow {
+  id: string
+  user_id: string
+  title: string | null
+  created_at: string
+  last_message_at: string
+}
+
+export type KbChatSessionInsert = Omit<KbChatSessionRow, 'id' | 'created_at' | 'last_message_at'> & {
+  title?: string | null
+}
+
+export type KbChatSessionUpdate = Partial<Pick<KbChatSessionRow, 'title' | 'last_message_at'>>
+
+export interface KbChatMessageRow {
+  id: string
+  session_id: string
+  user_id: string
+  role: 'user' | 'assistant'
+  content: string
+  is_compressed_summary: boolean
+  created_at: string
+}
+
+export type KbChatMessageInsert = Omit<KbChatMessageRow, 'id' | 'created_at'> & {
+  is_compressed_summary?: boolean
+}
+
 // --- Domain types (not DB rows — for agent/UI use) ---
 
 /** Generated quest draft before DB insert */
@@ -475,6 +507,16 @@ export interface Database {
         Row: GoalChatMessageRow
         Insert: GoalChatMessageInsert
         Update: Partial<Omit<GoalChatMessageRow, 'id' | 'session_id' | 'user_id' | 'created_at'>>
+      }
+      kb_chat_sessions: {
+        Row: KbChatSessionRow
+        Insert: KbChatSessionInsert
+        Update: KbChatSessionUpdate
+      }
+      kb_chat_messages: {
+        Row: KbChatMessageRow
+        Insert: KbChatMessageInsert
+        Update: Partial<Omit<KbChatMessageRow, 'id' | 'session_id' | 'user_id' | 'created_at'>>
       }
     }
     Functions: Record<string, never>

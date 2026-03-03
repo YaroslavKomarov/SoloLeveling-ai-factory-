@@ -1,30 +1,32 @@
 'use client'
 
 /**
- * KnowledgeShell — three-panel orchestrator for the Knowledge Base.
+ * KnowledgeShell — two-tab orchestrator for the Knowledge Base.
  *
- * Layout:
- * ┌──────────┬────────────────────────┬──────────────┐
- * │ FileTree │   Center Panel          │  RAG Chat    │
- * │  240px   │  (editor + renderer)    │   320px      │
- * │          │  toggle: Edit/Preview   │              │
- * └──────────┴────────────────────────┴──────────────┘
+ * Tabs:
+ *   Notes — file tree + editor (previous three-panel layout, no RAG chat)
+ *   Chat  — KB chat sessions (KbChatPanel, persistent sessions)
+ *
+ * Tab is persisted to localStorage key 'kb-active-tab'.
  */
 import { useEffect, useState, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Eye, Edit3, Plus } from 'lucide-react'
+import { Eye, Edit3, Plus, FolderTree, X } from 'lucide-react'
 import type { NoteRow } from '@/lib/supabase/types'
 import { useKnowledgeStore } from '@/store/knowledge'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import { FileTree } from './FileTree'
 import { MarkdownEditor } from './MarkdownEditor'
 import { MarkdownRenderer } from './MarkdownRenderer'
-import { RagChatPanel } from './RagChatPanel'
+import { KbChatPanel } from './KbChatPanel'
 import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('KnowledgeShell')
 
 const PANEL_LEFT_WIDTH = 240
-const PANEL_RIGHT_WIDTH = 320
+const KB_ACTIVE_TAB_KEY = 'kb-active-tab'
+
+type ActiveTab = 'notes' | 'chat'
 
 interface KnowledgeShellProps {
   initialNotes: NoteRow[]
@@ -43,6 +45,41 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
   const selectNote = useKnowledgeStore((s) => s.selectNote)
   const setIsEditing = useKnowledgeStore((s) => s.setIsEditing)
   const createNote = useKnowledgeStore((s) => s.createNote)
+
+  const isMobile = useIsMobile()
+  const [mobileDrawer, setMobileDrawer] = useState<'filetree' | null>(null)
+
+  // Tab state — persisted to localStorage
+  const [activeTab, setActiveTabState] = useState<ActiveTab>('notes')
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(KB_ACTIVE_TAB_KEY)
+      if (stored === 'notes' || stored === 'chat') {
+        setActiveTabState(stored)
+        logger.debug('[KnowledgeShell] restored tab from localStorage', { tab: stored })
+      }
+    } catch (_) {
+      // localStorage may be unavailable in SSR or private browsing
+    }
+  }, [])
+
+  const setActiveTab = useCallback((tab: ActiveTab) => {
+    logger.debug('[KnowledgeShell] tab switched', { tab })
+    setActiveTabState(tab)
+    try {
+      localStorage.setItem(KB_ACTIVE_TAB_KEY, tab)
+    } catch (_) { /* ignore */ }
+  }, [])
+
+  const openDrawer = (panel: 'filetree') => {
+    logger.debug('[KnowledgeShell] panel drawer toggled', { panel, open: true })
+    setMobileDrawer(panel)
+  }
+  const closeDrawer = () => {
+    logger.debug('[KnowledgeShell] panel drawer toggled', { panel: mobileDrawer, open: false })
+    setMobileDrawer(null)
+  }
 
   const [isCreating, setIsCreating] = useState(false)
   const [newNoteTitle, setNewNoteTitle] = useState('')
@@ -134,80 +171,80 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
     <div
       style={{
         display: 'flex',
+        flexDirection: 'column',
         height: 'calc(100vh - var(--header-height, 56px))',
         background: '#0a0c10',
-        position: 'relative',
       }}
     >
-      {/* ── Left panel: FileTree (240px) ── */}
+      {/* ── Tab bar ── */}
       <div
         style={{
-          width: `${PANEL_LEFT_WIDTH}px`,
-          flexShrink: 0,
-          borderRight: '1px solid rgba(255,255,255,0.08)',
           display: 'flex',
-          flexDirection: 'column',
-          overflowY: 'auto',
+          flexShrink: 0,
+          borderBottom: '1px solid rgba(255,255,255,0.08)',
         }}
       >
-        {/* FileTree header */}
-        <div
-          style={{
-            padding: '12px 16px',
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexShrink: 0,
-          }}
-        >
-          <span
+        {(['notes', 'chat'] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
             style={{
+              background: activeTab === tab ? 'rgba(255,255,255,0.06)' : 'transparent',
+              border: 'none',
+              borderBottom: activeTab === tab ? '1px solid rgba(255,255,255,0.35)' : '1px solid transparent',
+              padding: '10px 20px',
+              cursor: 'pointer',
               fontFamily: 'Cinzel, serif',
               fontSize: '11px',
               letterSpacing: '0.1em',
               textTransform: 'uppercase',
-              color: 'rgba(255,255,255,0.35)',
+              color: activeTab === tab ? 'rgba(255,255,255,0.75)' : 'rgba(255,255,255,0.3)',
+              marginBottom: '-1px',
             }}
           >
-            Notes
-          </span>
-          <button
-            onClick={() => handleCreateNote('')}
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              color: 'rgba(255,255,255,0.3)',
-              padding: '2px',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-            title="New note"
-          >
-            <Plus size={14} />
+            {tab === 'notes' ? 'Notes' : 'Chat'}
           </button>
-        </div>
-
-        <FileTree notes={notes} onCreateNote={handleCreateNote} />
+        ))}
       </div>
 
-      {/* ── Center panel: Editor/Renderer ── */}
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          minWidth: 0,
-          borderRight: '1px solid rgba(255,255,255,0.08)',
-        }}
-      >
-        {selectedNote ? (
-          <>
-            {/* Center panel header: note title + mode toggle */}
+      {/* ── Tab content ── */}
+      {activeTab === 'chat' ? (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <KbChatPanel />
+        </div>
+      ) : (
+        /* Notes tab — file tree + editor panels */
+        <div
+          style={{
+            display: 'flex',
+            flex: 1,
+            minHeight: 0,
+            position: 'relative',
+          }}
+        >
+          {/* ── Left panel: FileTree (240px / mobile overlay) ── */}
+          <div
+            style={{
+              width: isMobile ? '100%' : `${PANEL_LEFT_WIDTH}px`,
+              flexShrink: 0,
+              borderRight: '1px solid rgba(255,255,255,0.08)',
+              display: isMobile && mobileDrawer !== 'filetree' ? 'none' : 'flex',
+              flexDirection: 'column',
+              overflowY: 'auto',
+              ...(isMobile ? {
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                bottom: 0,
+                zIndex: 10,
+                backgroundColor: '#0a0c10',
+              } : {}),
+            }}
+          >
+            {/* FileTree header */}
             <div
               style={{
-                padding: '10px 16px',
+                padding: '12px 16px',
                 borderBottom: '1px solid rgba(255,255,255,0.08)',
                 display: 'flex',
                 alignItems: 'center',
@@ -217,134 +254,199 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
             >
               <span
                 style={{
-                  fontFamily: 'Cormorant, serif',
-                  fontSize: '16px',
-                  color: 'rgba(255,255,255,0.8)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  maxWidth: '60%',
+                  fontFamily: 'Cinzel, serif',
+                  fontSize: '11px',
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.35)',
                 }}
               >
-                {selectedNote.title}
+                Notes
               </span>
-
-              {/* Edit / Preview toggle */}
-              <div
-                style={{
-                  display: 'flex',
-                  gap: '1px',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                }}
-              >
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                {isMobile && (
+                  <button
+                    onClick={closeDrawer}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: '2px', display: 'flex', alignItems: 'center' }}
+                    title="Close"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
                 <button
-                  onClick={() => setIsEditing(true)}
+                  onClick={() => handleCreateNote('')}
                   style={{
-                    background: isEditing ? 'rgba(255,255,255,0.08)' : 'transparent',
+                    background: 'none',
                     border: 'none',
-                    padding: '6px 12px',
                     cursor: 'pointer',
-                    color: isEditing ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.35)',
+                    color: 'rgba(255,255,255,0.3)',
+                    padding: '2px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    fontFamily: 'Cinzel, serif',
-                    fontSize: '10px',
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
                   }}
+                  title="New note"
                 >
-                  <Edit3 size={11} />
-                  Edit
-                </button>
-                <button
-                  onClick={() => setIsEditing(false)}
-                  style={{
-                    background: !isEditing ? 'rgba(255,255,255,0.08)' : 'transparent',
-                    border: 'none',
-                    padding: '6px 12px',
-                    cursor: 'pointer',
-                    color: !isEditing ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.35)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    fontFamily: 'Cinzel, serif',
-                    fontSize: '10px',
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  <Eye size={11} />
-                  Preview
+                  <Plus size={14} />
                 </button>
               </div>
             </div>
 
-            {/* Editor or Renderer */}
-            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-              {isEditing ? (
-                <MarkdownEditor key={selectedNote.id} note={selectedNote} />
-              ) : (
-                <MarkdownRenderer key={selectedNote.id} note={selectedNote} />
-              )}
-            </div>
-          </>
-        ) : (
-          /* Empty state */
+            <FileTree notes={notes} onCreateNote={handleCreateNote} />
+          </div>
+
+          {/* ── Center panel: Editor/Renderer ── */}
           <div
             style={{
               flex: 1,
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
               flexDirection: 'column',
-              gap: '16px',
+              minWidth: 0,
             }}
           >
-            <span
-              style={{
-                fontFamily: 'Cinzel, serif',
-                fontSize: '14px',
-                letterSpacing: '0.08em',
-                color: 'rgba(255,255,255,0.2)',
-                textTransform: 'uppercase',
-              }}
-            >
-              Select a note to begin
-            </span>
-            {notes.length === 0 && (
-              <button
-                onClick={() => handleCreateNote('')}
+            {selectedNote ? (
+              <>
+                {/* Center panel header: note title + mode toggle */}
+                <div
+                  style={{
+                    padding: '10px 16px',
+                    borderBottom: '1px solid rgba(255,255,255,0.08)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexShrink: 0,
+                  }}
+                >
+                  {/* Left: mobile panel toggles + note title */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                    {isMobile && (
+                      <button
+                        onClick={() => openDrawer('filetree')}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: '4px', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+                        title="Notes"
+                      >
+                        <FolderTree size={14} />
+                      </button>
+                    )}
+                    <span
+                      style={{
+                        fontFamily: 'Cormorant, serif',
+                        fontSize: '16px',
+                        color: 'rgba(255,255,255,0.8)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {selectedNote.title}
+                    </span>
+                  </div>
+
+                  {/* Edit / Preview toggle */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      gap: '1px',
+                      border: '1px solid rgba(255,255,255,0.12)',
+                    }}
+                  >
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      style={{
+                        background: isEditing ? 'rgba(255,255,255,0.08)' : 'transparent',
+                        border: 'none',
+                        padding: '6px 12px',
+                        cursor: 'pointer',
+                        color: isEditing ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.35)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontFamily: 'Cinzel, serif',
+                        fontSize: '10px',
+                        letterSpacing: '0.08em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      <Edit3 size={11} />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setIsEditing(false)}
+                      style={{
+                        background: !isEditing ? 'rgba(255,255,255,0.08)' : 'transparent',
+                        border: 'none',
+                        padding: '6px 12px',
+                        cursor: 'pointer',
+                        color: !isEditing ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.35)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontFamily: 'Cinzel, serif',
+                        fontSize: '10px',
+                        letterSpacing: '0.08em',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      <Eye size={11} />
+                      Preview
+                    </button>
+                  </div>
+                </div>
+
+                {/* Editor or Renderer */}
+                <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                  {isEditing ? (
+                    <MarkdownEditor key={selectedNote.id} note={selectedNote} />
+                  ) : (
+                    <MarkdownRenderer key={selectedNote.id} note={selectedNote} />
+                  )}
+                </div>
+              </>
+            ) : (
+              /* Empty state */
+              <div
                 style={{
-                  background: 'none',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  padding: '8px 20px',
-                  cursor: 'pointer',
-                  fontFamily: 'Cinzel, serif',
-                  fontSize: '11px',
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  color: 'rgba(255,255,255,0.4)',
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexDirection: 'column',
+                  gap: '16px',
                 }}
               >
-                Create First Note
-              </button>
+                <span
+                  style={{
+                    fontFamily: 'Cinzel, serif',
+                    fontSize: '14px',
+                    letterSpacing: '0.08em',
+                    color: 'rgba(255,255,255,0.2)',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Select a note to begin
+                </span>
+                {notes.length === 0 && (
+                  <button
+                    onClick={() => handleCreateNote('')}
+                    style={{
+                      background: 'none',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      padding: '8px 20px',
+                      cursor: 'pointer',
+                      fontFamily: 'Cinzel, serif',
+                      fontSize: '11px',
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      color: 'rgba(255,255,255,0.4)',
+                    }}
+                  >
+                    Create First Note
+                  </button>
+                )}
+              </div>
             )}
           </div>
-        )}
-      </div>
-
-      {/* ── Right panel: RAG Chat (320px) ── */}
-      <div
-        style={{
-          width: `${PANEL_RIGHT_WIDTH}px`,
-          flexShrink: 0,
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <RagChatPanel />
-      </div>
+        </div>
+      )}
 
       {/* Create Note Modal */}
       {isCreating && (

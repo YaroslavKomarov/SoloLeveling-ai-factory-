@@ -1,17 +1,14 @@
 /**
  * Zustand store for the Knowledge Base feature.
- * Manages: note list, selected note, editor/saving state, and RAG chat.
+ * Manages: note list, selected note, editor/saving state.
+ *
+ * Chat state has been moved to useKbChatStore (src/store/kb-chat.ts).
  */
 import { create } from 'zustand'
 import type { NoteRow } from '@/lib/supabase/types'
 import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('knowledge/store')
-
-export interface ChatMessage {
-  role: 'user' | 'assistant'
-  content: string
-}
 
 export interface KnowledgeState {
   // Note list
@@ -22,22 +19,15 @@ export interface KnowledgeState {
   // Editor state
   isEditing: boolean
   isSaving: boolean
-  // RAG chat state
-  chatMessages: ChatMessage[]
-  isChatLoading: boolean
 
   // Actions
   setNotes: (notes: NoteRow[]) => void
   selectNote: (noteId: string | null) => void
   updateNoteContent: (noteId: string, content: string) => void
-  addChatMessage: (msg: ChatMessage) => void
-  setChatMessages: (msgs: ChatMessage[]) => void
   setIsSaving: (saving: boolean) => void
-  setIsChatLoading: (loading: boolean) => void
   setIsEditing: (editing: boolean) => void
   createNote: (note: NoteRow) => void
   deleteNote: (noteId: string) => void
-  clearChat: () => void
 }
 
 export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
@@ -46,8 +36,6 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
   selectedNote: null,
   isEditing: true,
   isSaving: false,
-  chatMessages: [],
-  isChatLoading: false,
 
   setNotes: (notes) => {
     logger.debug('setNotes', { count: notes.length })
@@ -81,22 +69,8 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
     })
   },
 
-  addChatMessage: (msg) => {
-    logger.debug('addChatMessage', { role: msg.role, contentLength: msg.content.length })
-    set((state) => ({ chatMessages: [...state.chatMessages, msg] }))
-  },
-
-  setChatMessages: (msgs) => {
-    logger.debug('setChatMessages', { count: msgs.length })
-    set({ chatMessages: msgs })
-  },
-
   setIsSaving: (saving) => {
     set({ isSaving: saving })
-  },
-
-  setIsChatLoading: (loading) => {
-    set({ isChatLoading: loading })
   },
 
   setIsEditing: (editing) => {
@@ -117,10 +91,5 @@ export const useKnowledgeStore = create<KnowledgeState>((set, get) => ({
       const selectedNoteId = state.selectedNoteId === noteId ? null : state.selectedNoteId
       return { notes, selectedNote, selectedNoteId }
     })
-  },
-
-  clearChat: () => {
-    logger.debug('clearChat')
-    set({ chatMessages: [] })
   },
 }))
