@@ -13,6 +13,7 @@ import { getSphereById } from '@/lib/supabase/spheres'
 import { decryptToken, encryptToken } from '@/lib/calendar/encryption'
 import { refreshAccessToken, type OAuthTokens } from '@/lib/calendar/oauth'
 import { createTaskEvent } from '@/lib/calendar/event-sync'
+import { fetchBusyIntervals, findFreeIntervals, computeTaskStartTimes, parseTimeStr, minutesToTimeStr } from '@/lib/calendar/slot-finder'
 import { createLogger } from '@/lib/logger'
 import type { GoalInsert, GoalType, QuestDraft, QuestInsert, TaskInsert, TaskPlanEntry } from '@/lib/supabase/types'
 
@@ -178,7 +179,7 @@ export async function POST(request: NextRequest) {
         const adminSupabase = createAdminClient()
         const { data: profile } = await adminSupabase
           .from('users')
-          .select('calendar_token_encrypted, timezone, activity_window_start')
+          .select('calendar_token_encrypted, timezone, activity_window_start, activity_window_end')
           .eq('id', user.id)
           .maybeSingle()
 
@@ -204,11 +205,11 @@ export async function POST(request: NextRequest) {
 
         const timezone = profile.timezone || 'UTC'
         const activityStart = (profile.activity_window_start as string | null) || '09:00:00'
-        const [startHourStr, startMinuteStr] = activityStart.split(':')
-        const startHour = Number(startHourStr ?? '9')
-        const startMinute = Number(startMinuteStr ?? '0')
+        const activityEnd = (profile.activity_window_end as string | null) || '21:00:00'
+        const windowStartMin = parseTimeStr(activityStart)
+        const windowEndMin = parseTimeStr(activityEnd)
 
-        // Group tasks by date to assign sequential start times per day
+        // Group tasks by date to assign slot times per day
         const tasksByDate = new Map<string, typeof createdTasks>()
         for (const task of createdTasks) {
           const date = task.scheduled_date
@@ -218,14 +219,42 @@ export async function POST(request: NextRequest) {
 
         let totalSynced = 0
 
-        for (const [, dateTasks] of tasksByDate) {
-          let currentOffsetMin = 0
-          for (const task of dateTasks) {
-            const durationMin = task.duration_minutes ?? (task.task_type === 'strategic' ? 27 : 12)
-            const totalMin = startHour * 60 + startMinute + currentOffsetMin
-            const eventHour = Math.floor(totalMin / 60) % 24
-            const eventMinute = totalMin % 60
-            const eventStartStr = `${String(eventHour).padStart(2, '0')}:${String(eventMinute).padStart(2, '0')}:00`
+        for (const [date, dateTasks] of tasksByDate) {
+          // [FIX] Fetch existing busy intervals from Google Calendar for this date
+          // so we don't overlap with existing goal events.
+          // On error, falls back to empty → still distributes evenly, just without overlap avoidance.
+          const busyIntervals = await fetchBusyIntervals(tokens.access_token, date)
+          const freeIntervals = findFreeIntervals(busyIntervals, windowStartMin, windowEndMin)
+
+          logger.debug('[FIX] calendar sync: slot data for date', {
+            goalId: goal.id,
+            date,
+            taskCount: dateTasks.length,
+            busyCount: busyIntervals.length,
+            freeIntervalCount: freeIntervals.length,
+          })
+
+          // [FIX] Compute evenly-distributed start times, respecting busy slots
+          const taskDescriptors = dateTasks.map(t => ({
+            durationMin: t.duration_minutes ?? (t.task_type === 'strategic' ? 27 : 12),
+            gapMin: t.task_type === 'strategic' ? 15 : 10,
+          }))
+          const startTimes = computeTaskStartTimes(taskDescriptors, freeIntervals, windowEndMin)
+
+          for (let i = 0; i < dateTasks.length; i++) {
+            const task = dateTasks[i]!
+            const startMin = startTimes[i]
+            const durationMin = taskDescriptors[i]!.durationMin
+
+            if (startMin === null) {
+              logger.warn('[FIX] calendar sync: no free slot for task, skipping calendar event', {
+                taskId: task.id,
+                date,
+              })
+              continue
+            }
+
+            const eventStartStr = minutesToTimeStr(startMin)
 
             try {
               const eventId = await createTaskEvent(
@@ -236,17 +265,14 @@ export async function POST(request: NextRequest) {
                 goal.title
               )
               await adminSupabase.from('tasks').update({ calendar_event_id: eventId }).eq('id', task.id)
-              const gapMin = task.task_type === 'strategic' ? 15 : 10
-              currentOffsetMin += durationMin + gapMin
               totalSynced++
             } catch (err) {
               logger.error('[FIX] calendar sync: event creation failed for task', {
                 taskId: task.id,
-                scheduledDate: task.scheduled_date,
+                date,
+                startTime: eventStartStr,
                 error: err instanceof Error ? err.message : String(err),
               })
-              const gapMin = task.task_type === 'strategic' ? 15 : 10
-              currentOffsetMin += durationMin + gapMin
             }
           }
         }

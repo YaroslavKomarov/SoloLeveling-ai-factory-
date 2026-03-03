@@ -60,6 +60,7 @@ function GoalChatSessionList({ goalId }: { goalId: string }) {
   const addSession = useGoalExpertStore((s) => s.addSession)
   const removeSession = useGoalExpertStore((s) => s.removeSession)
   const setActiveSession = useGoalExpertStore((s) => s.setActiveSession)
+  const reset = useGoalExpertStore((s) => s.reset)
 
   const [isCreating, setIsCreating] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -67,6 +68,11 @@ function GoalChatSessionList({ goalId }: { goalId: string }) {
 
   // Load sessions on mount
   useEffect(() => {
+    // [FIX] Clear stale data from previous goal immediately, before the async fetch.
+    // Prevents GoalChatWindow from seeing sessions/activeSessionId from a different goal.
+    logger.debug('[FIX] GoalChatSessionList — resetting store for new goalId', { goalId })
+    reset()
+
     async function loadSessions() {
       logger.debug('[GoalExpertPanel] loading sessions', { goalId })
       try {
@@ -336,6 +342,15 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
     if (!activeSessionId) return
 
     async function loadMessages() {
+      // [FIX] Guard: read live store state (not the closure-captured render snapshot).
+      // If activeSessionId is no longer in the current sessions list (e.g. goalId just changed
+      // and GoalChatSessionList already called reset()), skip — this would be a cross-goal request.
+      const { sessions: currentSessions } = useGoalExpertStore.getState()
+      if (!currentSessions.some((s) => s.id === activeSessionId)) {
+        windowLogger.debug('[FIX] GoalChatWindow — skipping stale session load (session not in current goal)', { sessionId: activeSessionId })
+        return
+      }
+
       windowLogger.debug('[GoalChatWindow] loading messages', { sessionId: activeSessionId })
       try {
         const res = await fetch(`/api/goals/${goalId}/chat/${activeSessionId}/messages`)
@@ -620,11 +635,24 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
           created_at: new Date().toISOString(),
         })
 
-        // Update session last_message_at
+        // Update session metadata (last_message_at, and title if this is the first message)
+        const patchBody: Record<string, string> = { last_message_at: new Date().toISOString() }
+
+        // [FIX] Auto-title from first user message when session still has the default "New Chat" name
+        const isFirstMessage = sessionMessages.length === 0
+        const hasDefaultTitle = session?.title === 'New Chat'
+        if (isFirstMessage && hasDefaultTitle) {
+          const firstLine = query.split('\n')[0].trim()
+          const autoTitle = firstLine.length > 60 ? firstLine.slice(0, 60) + '…' : firstLine
+          patchBody.title = autoTitle
+          updateSession(sessionId, { title: autoTitle })
+          windowLogger.debug('[FIX] GoalChatWindow — auto-titled session', { sessionId, title: autoTitle })
+        }
+
         await fetch(`/api/goals/${goalId}/chat/${sessionId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ last_message_at: new Date().toISOString() }),
+          body: JSON.stringify(patchBody),
         })
       }
 

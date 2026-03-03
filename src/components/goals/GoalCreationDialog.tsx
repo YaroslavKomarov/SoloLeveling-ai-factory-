@@ -199,6 +199,14 @@ export function GoalCreationDialog() {
 
     addMessage({ role: 'user', content })
     setInputValue('')
+
+    // If agent already signaled readiness, treat any user reply as confirmation
+    if (isReadyToGenerate) {
+      logger.debug('[GoalCreationDialog] user confirmed generation via text, auto-proceeding')
+      setPhase('quests')
+      return
+    }
+
     await callAgent(content)
   }
 
@@ -210,13 +218,8 @@ export function GoalCreationDialog() {
 
       if (r.phase === 'quests' && r.goalType) {
         setDraftGoalType(r.goalType as 'skill' | 'knowledge')
-        // T07: instead of immediately transitioning, reveal the Generate button
-        // and add a system message — user confirms when ready
+        // Signal that agent is ready — user's next text message will auto-confirm
         setIsReadyToGenerate(true)
-        addMessage({
-          role: 'assistant',
-          content: 'I have everything I need. Click **Generate Goal Plan** when ready.',
-        })
         logger.debug('[GoalCreationDialog] readyToGenerate signal received', { goalType: r.goalType })
       }
 
@@ -342,6 +345,11 @@ export function GoalCreationDialog() {
 
   const handleClose = () => {
     logger.debug('[GoalCreationDialog] user cancelled, resetting state', { phase, isReadyToGenerate })
+    // [FIX] Always clear DB messages on close so next goal creation starts with empty chat
+    if (sphereId) {
+      fetch(`/api/agents/goal-generator?sphereId=${sphereId}`, { method: 'DELETE' })
+        .catch(err => logger.warn('[FIX] failed to clear dialog messages on close', { error: err instanceof Error ? err.message : String(err) }))
+    }
     reset()
     closeDialog()
   }
@@ -368,9 +376,17 @@ export function GoalCreationDialog() {
       logger.info('[GoalCreationDialog] auto summary note created', { goalId: createdGoalId })
     } catch (err) {
       logger.error('[GoalCreationDialog] auto note save failed', { error: err instanceof Error ? err.message : String(err) })
-    } finally {
-      handleClose()
     }
+
+    // [FIX] Clear dialog history from DB so next goal creation starts with empty chat
+    try {
+      const res = await fetch(`/api/agents/goal-generator?sphereId=${sphereId}`, { method: 'DELETE' })
+      logger.info('[FIX] dialog messages cleared', { sphereId, ok: res.ok })
+    } catch (err) {
+      logger.warn('[FIX] failed to clear dialog messages (non-critical)', { error: err instanceof Error ? err.message : String(err) })
+    }
+
+    handleClose()
   }
 
   if (!isOpen) return null
@@ -585,7 +601,7 @@ export function GoalCreationDialog() {
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Describe your goal... (Enter to send, Shift+Enter for newline)"
+                  placeholder={isReadyToGenerate ? "Reply to confirm and generate your plan..." : "Describe your goal... (Enter to send, Shift+Enter for newline)"}
                   rows={2}
                   disabled={isLoading}
                   style={{ resize: 'none', flex: 1 }}
@@ -599,20 +615,6 @@ export function GoalCreationDialog() {
                   <Send size={16} />
                 </Button>
               </div>
-              {isReadyToGenerate && !isLoading && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <Button
-                    onClick={() => {
-                      logger.debug('[GoalCreationDialog] user confirmed generation')
-                      setPhase('quests')
-                    }}
-                    variant="ghost"
-                    style={{ fontSize: '0.8125rem', opacity: 0.7 }}
-                  >
-                    Generate Goal Plan →
-                  </Button>
-                </div>
-              )}
             </div>
           )}
 

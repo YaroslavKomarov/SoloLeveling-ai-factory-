@@ -5,10 +5,11 @@
  * Design: animated progress-ring nodes, glowing completed goals,
  * animated connector lines, horizontal scroll per sphere.
  */
-import { useMemo } from 'react'
+import { useMemo, useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
-import { Plus } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import * as LucideIcons from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { createLogger } from '@/lib/logger'
@@ -262,6 +263,100 @@ function LockedSlot() {
   )
 }
 
+// ─── Active-goal warning modal ────────────────────────────────────────────────
+
+/**
+ * Shown when the user clicks "+" on a sphere that already has an active goal.
+ * Uses createPortal to escape PageTransition stacking context (see patches/2026-02-23-modal-centering-portal.md).
+ */
+function ActiveGoalWarningModal({ onClose }: { onClose: () => void }) {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
+  if (!mounted) return null
+
+  return createPortal(
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      onClick={onClose}
+    >
+      {/* Static centering wrapper — inner motion.div handles animation only */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 8 }}
+        transition={{ duration: 0.2 }}
+        style={{
+          background: '#0a0c10',
+          border: '1px solid rgba(255,255,255,0.15)',
+          padding: '32px',
+          maxWidth: '420px',
+          width: '90%',
+          position: 'relative',
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          style={{ position: 'absolute', top: '16px', right: '16px', color: 'rgba(255,255,255,0.4)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        >
+          <X size={16} />
+        </button>
+
+        <h2
+          style={{
+            fontFamily: 'Cinzel, serif',
+            fontSize: '14px',
+            letterSpacing: '0.15em',
+            textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.9)',
+            margin: '0 0 16px',
+          }}
+        >
+          Active Goal Exists
+        </h2>
+
+        <p
+          style={{
+            fontFamily: 'Cormorant, Georgia, serif',
+            fontSize: '16px',
+            color: 'rgba(255,255,255,0.65)',
+            lineHeight: 1.6,
+            margin: '0 0 24px',
+          }}
+        >
+          This sphere already has an active goal. Complete or cancel the current goal before creating a new one.
+        </p>
+
+        <button
+          onClick={onClose}
+          style={{
+            fontFamily: 'Cinzel, serif',
+            fontSize: '11px',
+            letterSpacing: '0.15em',
+            textTransform: 'uppercase',
+            color: 'rgba(255,255,255,0.7)',
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            padding: '10px 24px',
+            cursor: 'pointer',
+            width: '100%',
+          }}
+        >
+          Understood
+        </button>
+      </motion.div>
+    </div>,
+    document.body,
+  )
+}
+
 // ─── Sphere branch ────────────────────────────────────────────────────────────
 
 function SphereBranch({
@@ -299,6 +394,7 @@ function SphereBranch({
   chainElements.push(
     <motion.button
       key="add"
+      aria-label="Add goal"
       whileHover={{ scale: 1.1 }}
       whileTap={{ scale: 0.9 }}
       onClick={onAddGoal}
@@ -418,6 +514,7 @@ function SphereBranch({
 export function SkillTreeCanvas({ spheres, goals, quests, taskStats }: SkillTreeCanvasProps) {
   const router = useRouter()
   const openDialog = useGoalDialogStore(s => s.openDialog)
+  const [showActiveGoalWarning, setShowActiveGoalWarning] = useState(false)
 
   const sortedSpheres = useMemo(
     () => [...spheres].sort((a, b) => a.order_index - b.order_index),
@@ -447,21 +544,36 @@ export function SkillTreeCanvas({ spheres, goals, quests, taskStats }: SkillTree
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-      {sortedSpheres.map((sphere, index) => (
-        <SphereBranch
-          key={sphere.id}
-          sphere={sphere}
-          goals={goals.filter(g => g.sphere_id === sphere.id)}
-          quests={quests}
-          taskStats={taskStats}
-          onGoalClick={goalId => {
-            logger.debug('goal clicked', { goalId })
-            router.push(`/app/goals/${goalId}`)
-          }}
-          onAddGoal={() => openDialog(sphere.id)}
-          isLast={index === sortedSpheres.length - 1}
-        />
-      ))}
+      {sortedSpheres.map((sphere, index) => {
+        const sphereGoals = goals.filter(g => g.sphere_id === sphere.id)
+        const hasActiveGoal = sphereGoals.some(g => g.status === 'active')
+        return (
+          <SphereBranch
+            key={sphere.id}
+            sphere={sphere}
+            goals={sphereGoals}
+            quests={quests}
+            taskStats={taskStats}
+            onGoalClick={goalId => {
+              logger.debug('goal clicked', { goalId })
+              router.push(`/app/goals/${goalId}`)
+            }}
+            onAddGoal={() => {
+              if (hasActiveGoal) {
+                logger.debug('add goal blocked — active goal exists', { sphereId: sphere.id })
+                setShowActiveGoalWarning(true)
+              } else {
+                openDialog(sphere.id)
+              }
+            }}
+            isLast={index === sortedSpheres.length - 1}
+          />
+        )
+      })}
+
+      {showActiveGoalWarning && (
+        <ActiveGoalWarningModal onClose={() => setShowActiveGoalWarning(false)} />
+      )}
     </div>
   )
 }

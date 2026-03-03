@@ -54,7 +54,8 @@ export async function runDailyPlanner(
         planTodaysTasks,
         detectMissedTasks,
       },
-      maxSteps: 10,
+      // [FIX] AI SDK v6: maxSteps renamed to stopWhen (was silently ignored).
+      stopWhen: ({ steps }) => steps.length >= 10,
       onStepFinish: ({ toolResults }) => {
         if (!toolResults) return
 

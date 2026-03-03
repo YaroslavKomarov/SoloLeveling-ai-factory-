@@ -34,6 +34,7 @@ export interface GoalExpertState {
   addMessage: (sessionId: string, message: GoalChatMessage) => void
   setLoading: (v: boolean) => void
   setStreaming: (v: string) => void
+  reset: () => void
 }
 
 export const useGoalExpertStore = create<GoalExpertState>((set) => ({
@@ -101,5 +102,10 @@ export const useGoalExpertStore = create<GoalExpertState>((set) => ({
 
   setStreaming: (v) => {
     set({ streamingContent: v })
+  },
+
+  reset: () => {
+    logger.debug('GoalExpertStore.reset — clearing stale goal data')
+    set({ sessions: [], activeSessionId: null, messages: {}, isLoading: false, streamingContent: '' })
   },
 }))

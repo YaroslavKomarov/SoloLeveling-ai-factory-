@@ -22,8 +22,8 @@ export const readyToGenerateQuests = tool({
   description:
     'Call this PROACTIVELY when you have gathered enough information about the user\'s goal to determine its type and generate key results. ' +
     'Do NOT wait for the user to ask you to proceed — call this tool yourself as soon as you have sufficient context. ' +
-    'Do NOT suggest the user click any button before calling this tool. ' +
-    'Calling this signals the transition from gathering to quest generation and reveals the Generate button in the UI.',
+    'In the same response, include a short text asking the user to confirm, e.g. "I have everything I need. Reply to confirm and I\'ll generate your quest plan." ' +
+    'Do NOT mention any buttons. The user\'s next text reply will automatically trigger plan generation.',
   // [FIX] AI SDK v6 uses `inputSchema`, not `parameters`. Using `parameters` caused
   // tool.inputSchema to be undefined → asSchema(undefined) returned an empty schema
   // with additionalProperties:false → all model inputs failed Zod validation →

@@ -234,6 +234,31 @@ describe('GoalCreationDialog — T07: progressive disclosure for Generate Goal b
     expect(mockReset).toHaveBeenCalledOnce()
     expect(mockCloseDialog).toHaveBeenCalledOnce()
   })
+
+  // [FIX] Regression test: stale synthesis message appearing on next open after cancelled goal
+  it('closing dialog fires DELETE to clear DB messages so next open starts fresh', async () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(
+      makeStoreState({ phase: 'gathering', messages: [], sphereId: 'sphere-1' }) as never
+    )
+    mockFetchResponses([
+      emptyHistoryResponse,                                     // loadMessages GET
+      { ok: true, json: () => Promise.resolve({ ok: true }) }, // handleClose DELETE
+    ])
+
+    render(<GoalCreationDialog />)
+
+    const closeBtn = document.querySelector('button[style*="background: none"]') as HTMLButtonElement
+    if (closeBtn) fireEvent.click(closeBtn)
+
+    await waitFor(() => {
+      const fetchCalls = (vi.mocked(global.fetch) as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][]
+      const deleteCall = fetchCalls.find(
+        ([url, opts]) => url.includes('/api/agents/goal-generator') && opts?.method === 'DELETE'
+      )
+      expect(deleteCall).toBeDefined()
+      expect(deleteCall![0]).toContain('sphereId=sphere-1')
+    })
+  })
 })
 
 // ── Confirmed phase tests ──────────────────────────────────────────────────────

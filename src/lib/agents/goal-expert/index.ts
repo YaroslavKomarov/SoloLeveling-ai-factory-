@@ -123,7 +123,9 @@ export async function runGoalExpert(params: {
         updateTask,
         listGoalNotes,
       },
-      maxSteps: 5,
+      // [FIX] AI SDK v6 renamed maxSteps → stopWhen. maxSteps: 5 was silently ignored,
+      // causing the loop to stop after 1 step (tool call only, no text response).
+      stopWhen: ({ steps }) => steps.length >= 5,
       onStepFinish: ({ toolResults }) => {
         if (!toolResults) return
         for (const toolResult of toolResults) {
