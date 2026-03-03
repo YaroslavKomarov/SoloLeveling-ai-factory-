@@ -367,7 +367,7 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
               background: '#0d0f14',
               border: '1px solid rgba(255,255,255,0.12)',
               padding: '32px',
-              width: '380px',
+              width: 'min(380px, 90vw)',
               display: 'flex',
               flexDirection: 'column',
               gap: '16px',

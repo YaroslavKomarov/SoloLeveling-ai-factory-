@@ -90,6 +90,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <>
+      <style>{`
+        .app-content-wrapper {
+          width: 65%;
+          margin: 0 auto;
+        }
+        @media (max-width: 767px) {
+          .app-content-wrapper {
+            width: 100%;
+            padding: 0 1rem;
+            box-sizing: border-box;
+          }
+        }
+      `}</style>
       <Navigation />
       <TimerProvider />
       <NotificationPermissionBanner />
@@ -99,12 +112,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           minHeight: '100vh',
         }}
       >
-        <div
-          style={{
-            width: '65%',
-            margin: '0 auto',
-          }}
-        >
+        <div className="app-content-wrapper">
           <UserPanel
             level={level}
             xp={xp}
