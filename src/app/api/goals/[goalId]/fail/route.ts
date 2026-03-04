@@ -76,16 +76,13 @@ export async function POST(request: NextRequest, { params }: Props) {
 
     logger.info('goal failed via API', { goalId, userId: user.id, reason })
 
-    // Delete all Google Calendar events for this goal's tasks (fire-and-forget)
+    // Delete all Google Calendar events for this goal's tasks
     if (calendarEventIds.length > 0) {
-      ;(async () => {
-        try {
-          const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY
-          if (!encryptionKey) {
-            logger.warn('[FIX] calendar cleanup skipped: TOKEN_ENCRYPTION_KEY not set', { goalId })
-            return
-          }
-
+      try {
+        const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY
+        if (!encryptionKey) {
+          logger.warn('[FIX] calendar cleanup skipped: TOKEN_ENCRYPTION_KEY not set', { goalId })
+        } else {
           const adminSupabase = createAdminClient()
           const { data: profile } = await adminSupabase
             .from('users')
@@ -95,49 +92,48 @@ export async function POST(request: NextRequest, { params }: Props) {
 
           if (!profile?.calendar_token_encrypted) {
             logger.debug('[FIX] calendar cleanup skipped: no calendar connected', { userId: user.id, goalId })
-            return
-          }
+          } else {
+            let tokens = JSON.parse(decryptToken(profile.calendar_token_encrypted, encryptionKey)) as OAuthTokens
 
-          let tokens = JSON.parse(decryptToken(profile.calendar_token_encrypted, encryptionKey)) as OAuthTokens
-
-          const expiresAt = new Date(tokens.expiresAt).getTime()
-          if (Date.now() > expiresAt - 5 * 60 * 1000) {
-            if (!tokens.refresh_token) {
-              logger.warn('[FIX] calendar cleanup skipped: token expired, no refresh token', { userId: user.id })
-              return
+            const expiresAt = new Date(tokens.expiresAt).getTime()
+            if (Date.now() > expiresAt - 5 * 60 * 1000) {
+              if (!tokens.refresh_token) {
+                logger.warn('[FIX] calendar cleanup skipped: token expired, no refresh token', { userId: user.id })
+              } else {
+                tokens = await refreshAccessToken(tokens.refresh_token)
+                const newEncrypted = encryptToken(JSON.stringify(tokens), encryptionKey)
+                await adminSupabase.from('users').update({ calendar_token_encrypted: newEncrypted }).eq('id', user.id)
+              }
             }
-            tokens = await refreshAccessToken(tokens.refresh_token)
-            const newEncrypted = encryptToken(JSON.stringify(tokens), encryptionKey)
-            await adminSupabase.from('users').update({ calendar_token_encrypted: newEncrypted }).eq('id', user.id)
-          }
 
-          let deleted = 0
-          for (const { taskId, eventId } of calendarEventIds) {
-            try {
-              await deleteTaskEvent(tokens.access_token, eventId)
-              deleted++
-            } catch (err) {
-              logger.error('[FIX] calendar cleanup: delete failed for event', {
-                taskId,
-                eventId,
-                error: err instanceof Error ? err.message : String(err),
-              })
+            let deleted = 0
+            for (const { taskId, eventId } of calendarEventIds) {
+              try {
+                await deleteTaskEvent(tokens.access_token, eventId)
+                deleted++
+              } catch (err) {
+                logger.error('[FIX] calendar cleanup: delete failed for event', {
+                  taskId,
+                  eventId,
+                  error: err instanceof Error ? err.message : String(err),
+                })
+              }
             }
-          }
 
-          logger.info('[FIX] calendar cleanup: complete', {
-            goalId,
-            userId: user.id,
-            total: calendarEventIds.length,
-            deleted,
-          })
-        } catch (err) {
-          logger.warn('[FIX] calendar cleanup failed (non-blocking)', {
-            goalId,
-            error: err instanceof Error ? err.message : String(err),
-          })
+            logger.info('[FIX] calendar cleanup: complete', {
+              goalId,
+              userId: user.id,
+              total: calendarEventIds.length,
+              deleted,
+            })
+          }
         }
-      })()
+      } catch (err) {
+        logger.warn('[FIX] calendar cleanup failed (non-blocking)', {
+          goalId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
 
     return NextResponse.json({ success: true })

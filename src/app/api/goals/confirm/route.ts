@@ -3,6 +3,7 @@
  * Creates a goal + quests + tasks in a single transaction-like sequence.
  * Called from GoalCreationDialog after plan preview is approved.
  */
+import { after } from 'next/server'
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -142,8 +143,8 @@ export async function POST(request: NextRequest) {
 
     logger.info('goal confirmed', { goalId: goal.id, userId: user.id, taskCount: taskInserts.length })
 
-    // 5. Auto-create goal.md note (fire-and-forget — never blocks the response)
-    ;(async () => {
+    // 5. Auto-create goal.md note after response is sent
+    after(async () => {
       try {
         const sphere = await getSphereById(supabase, sphereId)
         const sphereName = sphere?.name ?? 'unknown'
@@ -164,10 +165,10 @@ export async function POST(request: NextRequest) {
           error: err instanceof Error ? err.message : String(err),
         })
       }
-    })()
+    })
 
-    // 6. Sync created tasks to Google Calendar (fire-and-forget — never blocks the response)
-    ;(async () => {
+    // 6. Sync created tasks to Google Calendar after response is sent (after() ensures Vercel doesn't kill the work early)
+    after(async () => {
       try {
         const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY
         if (!encryptionKey) {
@@ -263,7 +264,7 @@ export async function POST(request: NextRequest) {
           error: err instanceof Error ? err.message : String(err),
         })
       }
-    })()
+    })
 
     return NextResponse.json({ goal })
 
