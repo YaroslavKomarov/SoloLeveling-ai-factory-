@@ -202,6 +202,94 @@ describe('PATCH /api/goals/[goalId]/chat/[sessionId]', () => {
     expect(response.status).toBe(200)
     expect(json.session.status).toBe('readonly')
   })
+
+  it('updates title when provided (auto-title from first message)', async () => {
+    const existingSession = { id: 's1', user_id: 'user-1', goal_id: 'g1', session_type: 'general' }
+    const updatedSession = { ...existingSession, title: 'How do I structure my Q2 plan?' }
+
+    const sessionChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValueOnce({ data: existingSession, error: null }),
+    }
+
+    const updateFn = vi.fn().mockReturnThis()
+    const updateChain = {
+      update: updateFn,
+      eq: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: updatedSession, error: null }),
+    }
+
+    const supabase = makeSupabaseMock()
+    let callCount = 0
+    ;(supabase.from as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      callCount++
+      return callCount === 1 ? sessionChain : updateChain
+    })
+
+    vi.mocked(createClient).mockResolvedValue(supabase as ReturnType<typeof makeSupabaseMock>)
+
+    const { PATCH } = await import('../[goalId]/chat/[sessionId]/route')
+    const request = new NextRequest('http://localhost/', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        title: 'How do I structure my Q2 plan?',
+        last_message_at: '2026-03-03T12:00:00Z',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+    const response = await PATCH(request, { params: Promise.resolve({ goalId: 'g1', sessionId: 's1' }) })
+    const json = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(json.session.title).toBe('How do I structure my Q2 plan?')
+    // Verify title was passed into the supabase update call
+    expect(updateFn).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'How do I structure my Q2 plan?' })
+    )
+  })
+
+  it('does not set title in update when title is absent from body', async () => {
+    const existingSession = { id: 's1', user_id: 'user-1', goal_id: 'g1', session_type: 'general' }
+    const updatedSession = { ...existingSession, last_message_at: '2026-03-03T12:00:00Z' }
+
+    const sessionChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValueOnce({ data: existingSession, error: null }),
+    }
+
+    const updateFn = vi.fn().mockReturnThis()
+    const updateChain = {
+      update: updateFn,
+      eq: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: updatedSession, error: null }),
+    }
+
+    const supabase = makeSupabaseMock()
+    let callCount = 0
+    ;(supabase.from as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      callCount++
+      return callCount === 1 ? sessionChain : updateChain
+    })
+
+    vi.mocked(createClient).mockResolvedValue(supabase as ReturnType<typeof makeSupabaseMock>)
+
+    const { PATCH } = await import('../[goalId]/chat/[sessionId]/route')
+    const request = new NextRequest('http://localhost/', {
+      method: 'PATCH',
+      body: JSON.stringify({ last_message_at: '2026-03-03T12:00:00Z' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+    await PATCH(request, { params: Promise.resolve({ goalId: 'g1', sessionId: 's1' }) })
+
+    // title must NOT appear in the update payload
+    expect(updateFn).toHaveBeenCalledWith(
+      expect.not.objectContaining({ title: expect.anything() })
+    )
+  })
 })
 
 describe('DELETE /api/goals/[goalId]/chat/[sessionId]', () => {

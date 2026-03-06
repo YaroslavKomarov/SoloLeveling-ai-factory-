@@ -307,7 +307,9 @@ export interface QuestDraft {
   unit: string
   orderIndex: number
   fatigueType?: FatigueType  // which fatigue bar tasks in this quest affect
-  regularTaskDescription?: string   // step-by-step guidance for the repeating regular task
+  regularTaskTitle?: string           // specific repeatable task title from agent (e.g. "Practice Sonic pen spin — 10 reps")
+  regularTaskDescription?: string     // step-by-step guidance for the repeating regular task
+  strategicTaskTitles?: string[]      // per-session strategic task titles from agent (same order as descriptions)
   strategicTaskDescriptions?: string[]  // per-session guidance for each strategic task (same order as strategic task titles)
 }
 

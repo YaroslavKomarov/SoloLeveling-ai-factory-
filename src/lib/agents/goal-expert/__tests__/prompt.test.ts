@@ -57,6 +57,11 @@ describe('buildGoalExpertSystemPrompt', () => {
     expect(prompt).toContain('task-789')
   })
 
+  it('contains listGoalTasks tool reference in general mode', () => {
+    const prompt = buildGoalExpertSystemPrompt(baseParams)
+    expect(prompt).toContain('listGoalTasks')
+  })
+
   it('task mode contains Socratic guidance instruction', () => {
     const prompt = buildGoalExpertSystemPrompt({
       ...baseParams,

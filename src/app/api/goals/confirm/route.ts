@@ -3,6 +3,7 @@
  * Creates a goal + quests + tasks in a single transaction-like sequence.
  * Called from GoalCreationDialog after plan preview is approved.
  */
+import { after } from 'next/server'
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -13,6 +14,7 @@ import { getSphereById } from '@/lib/supabase/spheres'
 import { decryptToken, encryptToken } from '@/lib/calendar/encryption'
 import { refreshAccessToken, type OAuthTokens } from '@/lib/calendar/oauth'
 import { createTaskEvent } from '@/lib/calendar/event-sync'
+import { fetchBusyIntervals, findFreeIntervals, computeTaskStartTimes, timeStrToMin, type Interval } from '@/lib/calendar/slot-finder'
 import { createLogger } from '@/lib/logger'
 import type { GoalInsert, GoalType, QuestDraft, QuestInsert, TaskInsert, TaskPlanEntry } from '@/lib/supabase/types'
 
@@ -142,8 +144,8 @@ export async function POST(request: NextRequest) {
 
     logger.info('goal confirmed', { goalId: goal.id, userId: user.id, taskCount: taskInserts.length })
 
-    // 5. Auto-create goal.md note (fire-and-forget — never blocks the response)
-    ;(async () => {
+    // 5. Auto-create goal.md note after response is sent
+    after(async () => {
       try {
         const sphere = await getSphereById(supabase, sphereId)
         const sphereName = sphere?.name ?? 'unknown'
@@ -164,10 +166,10 @@ export async function POST(request: NextRequest) {
           error: err instanceof Error ? err.message : String(err),
         })
       }
-    })()
+    })
 
-    // 6. Sync created tasks to Google Calendar (fire-and-forget — never blocks the response)
-    ;(async () => {
+    // 6. Sync created tasks to Google Calendar after response is sent (after() ensures Vercel doesn't kill the work early)
+    after(async () => {
       try {
         const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY
         if (!encryptionKey) {
@@ -178,7 +180,7 @@ export async function POST(request: NextRequest) {
         const adminSupabase = createAdminClient()
         const { data: profile } = await adminSupabase
           .from('users')
-          .select('calendar_token_encrypted, timezone, activity_window_start')
+          .select('calendar_token_encrypted, timezone, activity_window_start, activity_window_end')
           .eq('id', user.id)
           .maybeSingle()
 
@@ -204,11 +206,11 @@ export async function POST(request: NextRequest) {
 
         const timezone = profile.timezone || 'UTC'
         const activityStart = (profile.activity_window_start as string | null) || '09:00:00'
-        const [startHourStr, startMinuteStr] = activityStart.split(':')
-        const startHour = Number(startHourStr ?? '9')
-        const startMinute = Number(startMinuteStr ?? '0')
+        const activityEnd = (profile.activity_window_end as string | null) || '21:00:00'
+        const windowStartMin = timeStrToMin(activityStart)
+        const windowEndMin = timeStrToMin(activityEnd)
 
-        // Group tasks by date to assign sequential start times per day
+        // Group tasks by date to schedule them per day
         const tasksByDate = new Map<string, typeof createdTasks>()
         for (const task of createdTasks) {
           const date = task.scheduled_date
@@ -218,14 +220,41 @@ export async function POST(request: NextRequest) {
 
         let totalSynced = 0
 
-        for (const [, dateTasks] of tasksByDate) {
-          let currentOffsetMin = 0
-          for (const task of dateTasks) {
+        for (const [dateStr, dateTasks] of tasksByDate) {
+          // Query existing Google Calendar events to avoid overlap
+          let busyIntervals: Interval[] = []
+          try {
+            busyIntervals = await fetchBusyIntervals(tokens.access_token, dateStr)
+            logger.debug('[FIX] calendar sync: busy intervals fetched', {
+              dateStr,
+              busyCount: busyIntervals.length,
+            })
+          } catch (err) {
+            logger.warn('[FIX] calendar sync: fetchBusyIntervals failed, proceeding with empty calendar', {
+              dateStr,
+              error: err instanceof Error ? err.message : String(err),
+            })
+          }
+
+          const freeIntervals = findFreeIntervals(busyIntervals, windowStartMin, windowEndMin)
+          const taskInputs = dateTasks.map((t) => ({
+            duration_minutes: t.duration_minutes ?? (t.task_type === 'strategic' ? 27 : 12),
+          }))
+          const startTimes = computeTaskStartTimes(taskInputs, freeIntervals, windowEndMin)
+
+          logger.debug('[FIX] calendar sync: slots computed', {
+            dateStr,
+            freeIntervalCount: freeIntervals.length,
+            taskCount: dateTasks.length,
+            assignedSlots: startTimes.filter(Boolean).length,
+          })
+
+          for (let i = 0; i < dateTasks.length; i++) {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+            const task = dateTasks[i]!
             const durationMin = task.duration_minutes ?? (task.task_type === 'strategic' ? 27 : 12)
-            const totalMin = startHour * 60 + startMinute + currentOffsetMin
-            const eventHour = Math.floor(totalMin / 60) % 24
-            const eventMinute = totalMin % 60
-            const eventStartStr = `${String(eventHour).padStart(2, '0')}:${String(eventMinute).padStart(2, '0')}:00`
+            // Fall back to activity window start if no slot was found
+            const eventStartStr = startTimes[i] ?? activityStart
 
             try {
               const eventId = await createTaskEvent(
@@ -236,8 +265,6 @@ export async function POST(request: NextRequest) {
                 goal.title
               )
               await adminSupabase.from('tasks').update({ calendar_event_id: eventId }).eq('id', task.id)
-              const gapMin = task.task_type === 'strategic' ? 15 : 10
-              currentOffsetMin += durationMin + gapMin
               totalSynced++
             } catch (err) {
               logger.error('[FIX] calendar sync: event creation failed for task', {
@@ -245,8 +272,6 @@ export async function POST(request: NextRequest) {
                 scheduledDate: task.scheduled_date,
                 error: err instanceof Error ? err.message : String(err),
               })
-              const gapMin = task.task_type === 'strategic' ? 15 : 10
-              currentOffsetMin += durationMin + gapMin
             }
           }
         }
@@ -263,7 +288,7 @@ export async function POST(request: NextRequest) {
           error: err instanceof Error ? err.message : String(err),
         })
       }
-    })()
+    })
 
     return NextResponse.json({ goal })
 

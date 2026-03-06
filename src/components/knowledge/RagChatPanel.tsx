@@ -11,6 +11,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useKnowledgeStore } from '@/store/knowledge'
 import type { ChatMessage } from '@/store/knowledge'
+import { MAX_HISTORY_MESSAGES } from '@/lib/agents/knowledge-rag/constants'
 import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('RagChatPanel')
@@ -33,7 +34,9 @@ export function RagChatPanel() {
 
   // [FIX:T01] Log mount to confirm no infinite loop regression
   useEffect(() => {
-    logger.debug('[FIX:T01] RagChatPanel mounted — split selectors active')
+    logger.debug('[FIX:T01] RagChatPanel mounted — split selectors active', {
+      maxHistoryMessages: MAX_HISTORY_MESSAGES,
+    })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to bottom when new messages appear
@@ -162,15 +165,31 @@ export function RagChatPanel() {
         >
           Knowledge Oracle
         </span>
-        {chatMessages.length > 0 && (
-          <button
-            onClick={handleClearChat}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: 'rgba(255,255,255,0.25)' }}
-            title="Clear chat"
-          >
-            <Trash2 size={13} />
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {chatMessages.length > 0 && (
+            <span
+              style={{
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '10px',
+                color: chatMessages.length >= MAX_HISTORY_MESSAGES
+                  ? 'rgba(255,255,255,0.45)'
+                  : 'rgba(255,255,255,0.2)',
+              }}
+              title={`${chatMessages.length} of ${MAX_HISTORY_MESSAGES} context messages used`}
+            >
+              {chatMessages.length} / {MAX_HISTORY_MESSAGES}
+            </span>
+          )}
+          {chatMessages.length > 0 && (
+            <button
+              onClick={handleClearChat}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: 'rgba(255,255,255,0.25)' }}
+              title="Clear chat"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}

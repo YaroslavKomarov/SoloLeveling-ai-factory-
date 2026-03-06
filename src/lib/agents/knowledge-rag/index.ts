@@ -2,12 +2,18 @@
  * Knowledge RAG agent — semantic search + wikilinks graph traversal.
  * Uses claude-haiku-4-5-20251001 for fast, cost-effective responses.
  * Streams the response for real-time UI updates.
+ *
+ * Context management: sliding window — trims conversation history to the last
+ * MAX_HISTORY_MESSAGES before each LLM call to prevent context_length_exceeded errors.
  */
 import { streamText } from 'ai'
 import { getFastModel } from '@/lib/ai/provider'
 import { createLogger } from '@/lib/logger'
 import { KNOWLEDGE_RAG_SYSTEM_PROMPT } from './prompt'
 import { searchNotes, getNoteContent, getBacklinkedNotes, listAllNotes } from './tools'
+import { MAX_HISTORY_MESSAGES } from './constants'
+
+export { MAX_HISTORY_MESSAGES }
 
 const logger = createLogger('KnowledgeRag')
 
@@ -32,12 +38,34 @@ export async function runKnowledgeRag(
     historyMessages: conversationHistory.length,
   })
 
+  // Apply sliding window: trim history to last MAX_HISTORY_MESSAGES to prevent context overflow
+  const trimmedHistory = conversationHistory.length > MAX_HISTORY_MESSAGES
+    ? conversationHistory.slice(-MAX_HISTORY_MESSAGES)
+    : conversationHistory
+
+  if (conversationHistory.length > MAX_HISTORY_MESSAGES) {
+    logger.debug('Conversation history trimmed (sliding window)', {
+      userId,
+      originalLength: conversationHistory.length,
+      trimmedLength: trimmedHistory.length,
+      dropped: conversationHistory.length - MAX_HISTORY_MESSAGES,
+      maxAllowed: MAX_HISTORY_MESSAGES,
+    })
+  } else {
+    logger.debug('Conversation history within limit — no trimming needed', {
+      userId,
+      historyLength: trimmedHistory.length,
+      maxAllowed: MAX_HISTORY_MESSAGES,
+      withinLimit: true,
+    })
+  }
+
   // Build messages: inject userId into a user context message, then history
   const systemWithContext = `${KNOWLEDGE_RAG_SYSTEM_PROMPT}\n\n## Current User\nUser ID: ${userId}\n\nAlways pass this userId to searchNotes and getBacklinkedNotes tools.`
 
-  // Map conversation history to AI SDK message format
+  // Map trimmed conversation history to AI SDK message format
   const messages = [
-    ...conversationHistory.map((msg) => ({
+    ...trimmedHistory.map((msg) => ({
       role: msg.role as 'user' | 'assistant',
       content: msg.content,
     })),
@@ -61,7 +89,7 @@ export async function runKnowledgeRag(
         getBacklinkedNotes,
         listAllNotes,
       },
-      maxSteps: 6,
+      stopWhen: ({ steps }) => steps.length >= 6,
       onStepFinish: ({ toolResults }) => {
         if (!toolResults) return
         for (const toolResult of toolResults) {

@@ -11,7 +11,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { getSmartModel } from '@/lib/ai/provider'
 import { createClient } from '@/lib/supabase/server'
 import { listNotesByPrefix } from '@/lib/supabase/notes'
-import { getGoalsByUser, saveDialogMessage, getDialogMessages, getActiveGoalBySphere } from '@/lib/supabase/goals'
+import { getGoalsByUser, saveDialogMessage, getDialogMessages, clearDialogMessages, getActiveGoalBySphere } from '@/lib/supabase/goals'
 import { getSphereById } from '@/lib/supabase/spheres'
 import { buildContextMessages } from '@/lib/agents/goal-generator/context'
 import {
@@ -293,6 +293,42 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     logger.error('goal-generator GET failed', {
+      error: error instanceof Error ? error.message : String(error),
+    })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * DELETE /api/agents/goal-generator?sphereId=...
+ * Clear all dialog messages for a sphere (called on dialog close to prevent stale messages on next open).
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const sphereId = searchParams.get('sphereId')
+
+    if (!sphereId) {
+      return NextResponse.json({ error: 'sphereId is required' }, { status: 400 })
+    }
+
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    logger.debug('[FIX] goal-generator DELETE: clearing dialog messages', { userId: user.id, sphereId })
+
+    await clearDialogMessages(supabase, user.id, sphereId)
+
+    logger.debug('[FIX] goal-generator DELETE: done', { userId: user.id, sphereId })
+
+    return NextResponse.json({ ok: true })
+
+  } catch (error) {
+    logger.error('goal-generator DELETE failed', {
       error: error instanceof Error ? error.message : String(error),
     })
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

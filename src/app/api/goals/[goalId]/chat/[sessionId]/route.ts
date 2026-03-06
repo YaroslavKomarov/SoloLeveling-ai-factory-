@@ -25,6 +25,7 @@ export async function PATCH(
     const body = await request.json().catch(() => null) as {
       status?: string
       last_message_at?: string
+      title?: string
     } | null
 
     if (!body) {
@@ -48,6 +49,7 @@ export async function PATCH(
     const updates: Record<string, unknown> = {}
     if (body.status) updates.status = body.status
     if (body.last_message_at) updates.last_message_at = body.last_message_at
+    if (body.title) updates.title = body.title
 
     const { data: updated, error } = await supabase
       .from('goal_chat_sessions')
