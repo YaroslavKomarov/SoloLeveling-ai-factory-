@@ -61,6 +61,7 @@ function GoalChatSessionList({ goalId }: { goalId: string }) {
   const addSession = useGoalExpertStore((s) => s.addSession)
   const removeSession = useGoalExpertStore((s) => s.removeSession)
   const setActiveSession = useGoalExpertStore((s) => s.setActiveSession)
+  const reset = useGoalExpertStore((s) => s.reset)
 
   const [isCreating, setIsCreating] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -68,6 +69,7 @@ function GoalChatSessionList({ goalId }: { goalId: string }) {
 
   // Load sessions on mount
   useEffect(() => {
+    reset()  // [FIX] clear stale sessions/activeSessionId from previous goal before fetching
     async function loadSessions() {
       logger.debug('[GoalExpertPanel] loading sessions', { goalId })
       try {
@@ -90,7 +92,7 @@ function GoalChatSessionList({ goalId }: { goalId: string }) {
     }
     loadSessions()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goalId])
+  }, [goalId])  // reset is stable (store action), goalId is the only dependency
 
   const handleCreateSession = useCallback(async () => {
     if (isCreating) return
@@ -337,6 +339,15 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
     if (!activeSessionId) return
 
     async function loadMessages() {
+      // [FIX] Guard against stale activeSessionId captured in closure from a previous goal.
+      // By the time this async function runs, GoalChatSessionList's effect has already called
+      // reset(), so getState().sessions is empty. If the captured sessionId is not in the
+      // current sessions list, skip the fetch entirely.
+      const { sessions: currentSessions } = useGoalExpertStore.getState()
+      if (!currentSessions.some((s) => s.id === activeSessionId)) {
+        windowLogger.debug('[FIX] skipping stale session load', { sessionId: activeSessionId })
+        return
+      }
       windowLogger.debug('[GoalChatWindow] loading messages', { sessionId: activeSessionId })
       try {
         const res = await fetch(`/api/goals/${goalId}/chat/${activeSessionId}/messages`)
@@ -621,11 +632,21 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
           created_at: new Date().toISOString(),
         })
 
-        // Update session last_message_at
+        // Update session last_message_at (and auto-title on first message)
+        const patchBody: Record<string, string> = { last_message_at: new Date().toISOString() }
+        const isFirstMessage = sessionMessages.length === 0
+        const hasDefaultTitle = session?.title === 'New Chat'
+        if (isFirstMessage && hasDefaultTitle) {
+          const firstLine = query.split('\n')[0].trim()
+          const autoTitle = firstLine.length > 60 ? firstLine.slice(0, 60) + '…' : firstLine
+          windowLogger.debug('[FIX] auto-titling session from first message', { sessionId, autoTitle })
+          patchBody.title = autoTitle
+          updateSession(sessionId, { title: autoTitle })
+        }
         await fetch(`/api/goals/${goalId}/chat/${sessionId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ last_message_at: new Date().toISOString() }),
+          body: JSON.stringify(patchBody),
         })
       }
 
@@ -644,7 +665,7 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
       setStreaming('')
       setLoading(false)
     }
-  }, [inputValue, isLoading, activeSessionId, isReadonly, messages, sessions, activeTaskId, getRemainingMs, goalId, addMessage, setLoading, setStreaming])
+  }, [inputValue, isLoading, activeSessionId, isReadonly, messages, sessions, activeTaskId, getRemainingMs, goalId, addMessage, setLoading, setStreaming, updateSession])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

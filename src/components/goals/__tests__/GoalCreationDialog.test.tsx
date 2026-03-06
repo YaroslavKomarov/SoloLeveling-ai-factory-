@@ -1,14 +1,15 @@
 /**
- * Tests for GoalCreationDialog synthesis flow (T06):
- * - Confirmed phase shows "Create summary note" button
- * - Clicking synthesis button triggers agent call
- * - tool-output-available with phase='synthesis' transitions to synthesis phase
- * - Synthesis phase shows editable textarea with note content
- * - "Save note" button calls POST /api/notes/goal/{goalId}
- * - "Skip" button closes dialog without creating note
+ * Tests for GoalCreationDialog:
+ * - Phase rendering (gathering, quests, planning, preview, confirmed, synthesis)
+ * - isReadyToGenerate: placeholder text changes, text reply skips agent call
+ * - handleClose fires DELETE to clear DB messages (fix for stale synthesis message)
+ * - handleClose fires DELETE from any phase
+ * - DELETE failure doesn't block dialog close
+ * - handleClose doesn't fire DELETE when sphereId is null
+ * - loadMessages: fetches existing messages on open
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { GoalCreationDialog } from '../GoalCreationDialog'
 
 // ── Mocks ─────────────────────────────────────────────────────────────────────
@@ -22,7 +23,12 @@ vi.mock('framer-motion', () => ({
     div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
       <div {...props}>{children}</div>
     ),
-    button: ({ children, whileHover: _wh, whileTap: _wt, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { whileHover?: unknown; whileTap?: unknown }) => (
+    button: ({
+      children,
+      whileHover: _wh,
+      whileTap: _wt,
+      ...props
+    }: React.ButtonHTMLAttributes<HTMLButtonElement> & { whileHover?: unknown; whileTap?: unknown }) => (
       <button {...props}>{children}</button>
     ),
   },
@@ -33,15 +39,11 @@ vi.mock('@/lib/tasks/spaced-repetition', () => ({
   generateGoalPlan: vi.fn(() => ({ tasks: [], totalDays: 90 })),
 }))
 
-vi.mock('./QuestEditor', () => ({
-  QuestEditor: () => <div data-testid="quest-editor" />,
-}))
-
-vi.mock('./PlanPreview', () => ({
+vi.mock('../PlanPreview', () => ({
   PlanPreview: () => <div data-testid="plan-preview" />,
 }))
 
-// ── Store mock setup ───────────────────────────────────────────────────────────
+// ── Store helpers ──────────────────────────────────────────────────────────────
 
 const mockReset = vi.fn()
 const mockCloseDialog = vi.fn()
@@ -61,7 +63,7 @@ function makeStoreState(overrides: Record<string, unknown> = {}) {
   return {
     isOpen: true,
     sphereId: 'sphere-1',
-    phase: 'confirmed',
+    phase: 'gathering',
     messages: [],
     draftGoalType: 'skill',
     draftQuests: [],
@@ -69,7 +71,7 @@ function makeStoreState(overrides: Record<string, unknown> = {}) {
     isLoading: false,
     error: null,
     synthesisNote: null,
-    createdGoalId: 'goal-1',
+    createdGoalId: null,
     setPhase: mockSetPhase,
     addMessage: mockAddMessage,
     setStreamingMessage: mockSetStreamingMessage,
@@ -97,282 +99,357 @@ vi.mock('@/store/goals', () => ({
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
 
-/** Reusable GET /api/agents/goal-generator response (returns empty message history) */
-const emptyHistoryResponse = {
-  ok: true,
-  body: null,
-  json: () => Promise.resolve({ messages: [] }),
-}
+const emptyHistoryFetch = { ok: true, body: null, json: () => Promise.resolve({ messages: [] }) }
 
-/** Creates a minimal streaming body that returns one chunk then completes */
-function makeStreamBody(chunkData: string) {
-  let readCount = 0
-  return {
-    getReader: () => ({
-      read: vi.fn().mockImplementation(() => {
-        if (readCount === 0) {
-          readCount++
-          return Promise.resolve({ done: false, value: new TextEncoder().encode(chunkData) })
-        }
-        return Promise.resolve({ done: true, value: undefined })
-      }),
-    }),
-  }
-}
+type FetchStub = { ok: boolean; body?: unknown; json?: () => Promise<unknown> }
 
-function mockFetchResponses(responses: Array<{ ok: boolean; body?: unknown; json?: () => Promise<unknown> }>) {
+function stubFetch(...responses: FetchStub[]) {
   let call = 0
-  vi.stubGlobal(
+  return vi.stubGlobal(
     'fetch',
     vi.fn().mockImplementation(() => {
-      const resp = responses[call] ?? responses[responses.length - 1]
+      const resp: FetchStub = responses[call] ?? responses[responses.length - 1] ?? emptyHistoryFetch
       call++
-      const response = {
-        ok: resp.ok,
-        status: resp.ok ? 200 : 500,
-        body: resp.body ?? null,
-        json: resp.json ?? (() => Promise.resolve({})),
-      }
-      return Promise.resolve(response)
+      return Promise.resolve({ ok: resp.ok, status: resp.ok ? 200 : 500, body: resp.body ?? null, json: resp.json ?? (() => Promise.resolve({})) })
     })
   )
 }
 
-// ── Test setup ─────────────────────────────────────────────────────────────────
+// ── Import mocked store ────────────────────────────────────────────────────────
 
 const { useGoalDialogStore } = await import('@/store/goal-dialog')
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // jsdom doesn't implement scrollIntoView — stub it to avoid errors in gathering phase
   window.HTMLElement.prototype.scrollIntoView = vi.fn()
 })
 
-// ── Tests ──────────────────────────────────────────────────────────────────────
+// ── Phase rendering tests ──────────────────────────────────────────────────────
 
-// ── T07: progressive disclosure tests ─────────────────────────────────────────
-
-describe('GoalCreationDialog — T07: progressive disclosure for Generate Goal button', () => {
-  it('Generate Goal Plan button is not visible initially in gathering phase', () => {
-    vi.mocked(useGoalDialogStore).mockReturnValue(
-      makeStoreState({ phase: 'gathering', messages: [] }) as never
-    )
-    mockFetchResponses([emptyHistoryResponse])
+describe('GoalCreationDialog — phase rendering', () => {
+  it('gathering phase: shows empty placeholder when no messages', () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState() as never)
+    stubFetch(emptyHistoryFetch)
 
     render(<GoalCreationDialog />)
 
-    expect(screen.queryByText(/Generate Goal Plan/i)).toBeNull()
+    expect(screen.getByText(/Describe your goal/i)).toBeDefined()
+    expect(screen.getByPlaceholderText(/Describe your goal/i)).toBeDefined()
   })
 
-  it('Generate Goal Plan button appears after readyToGenerateQuests tool-output-available stream event', async () => {
-    vi.mocked(useGoalDialogStore).mockReturnValue(
-      makeStoreState({ phase: 'gathering', messages: [] }) as never
-    )
-
-    const toolOutputChunk =
-      'data: {"type":"tool-output-available","output":{"phase":"quests","goalType":"skill","goalSummary":"Learn Python","rationaleForType":"Practice-based"}}\n'
-
-    mockFetchResponses([
-      emptyHistoryResponse,
-      { ok: true, body: makeStreamBody(toolOutputChunk) },
-    ])
+  it('gathering phase: renders messages from store', () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState({
+      messages: [
+        { role: 'user', content: 'Learn Rust', isStreaming: false },
+        { role: 'assistant', content: 'Great goal!', isStreaming: false },
+      ],
+    }) as never)
+    stubFetch(emptyHistoryFetch)
 
     render(<GoalCreationDialog />)
 
-    // Type and send a message to trigger the agent call
+    expect(screen.getByText('Learn Rust')).toBeDefined()
+    expect(screen.getByText('Great goal!')).toBeDefined()
+  })
+
+  it('gathering phase: textarea placeholder changes when isReadyToGenerate', () => {
+    // isReadyToGenerate is internal state — test via tool-output-available event
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState() as never)
+
+    const toolOutputChunk =
+      'data: {"type":"tool-output-available","output":{"phase":"quests","goalType":"skill"}}\n'
+
+    let readCount = 0
+    const streamBody = {
+      getReader: () => ({
+        read: vi.fn().mockImplementation(() => {
+          if (readCount === 0) {
+            readCount++
+            return Promise.resolve({ done: false, value: new TextEncoder().encode(toolOutputChunk) })
+          }
+          return Promise.resolve({ done: true, value: undefined })
+        }),
+      }),
+    }
+
+    stubFetch(emptyHistoryFetch, { ok: true, body: streamBody })
+
+    render(<GoalCreationDialog />)
+
     const textarea = screen.getByPlaceholderText(/Describe your goal/i)
-    fireEvent.change(textarea, { target: { value: 'I want to learn Python' } })
+    fireEvent.change(textarea, { target: { value: 'I want to learn Rust' } })
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
 
-    await waitFor(() => {
-      expect(screen.getByText(/Generate Goal Plan/i)).toBeDefined()
+    return waitFor(() => {
+      expect(screen.getByPlaceholderText(/Reply to confirm/i)).toBeDefined()
     })
   })
 
-  it('clicking Generate Goal Plan button calls setPhase with quests', async () => {
-    vi.mocked(useGoalDialogStore).mockReturnValue(
-      makeStoreState({ phase: 'gathering', messages: [] }) as never
-    )
-
-    const toolOutputChunk =
-      'data: {"type":"tool-output-available","output":{"phase":"quests","goalType":"skill","goalSummary":"Learn Python","rationaleForType":"Practice-based"}}\n'
-
-    mockFetchResponses([
-      emptyHistoryResponse,
-      { ok: true, body: makeStreamBody(toolOutputChunk) },
-    ])
+  it('preview phase: renders PlanPreview and Continue button', () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState({
+      phase: 'preview',
+      planResult: { tasks: [], totalDays: 90 },
+    }) as never)
+    stubFetch(emptyHistoryFetch)
 
     render(<GoalCreationDialog />)
 
-    // Trigger the agent to call readyToGenerateQuests
-    const textarea = screen.getByPlaceholderText(/Describe your goal/i)
-    fireEvent.change(textarea, { target: { value: 'I want to learn Python' } })
-    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
-
-    await waitFor(() => {
-      expect(screen.getByText(/Generate Goal Plan/i)).toBeDefined()
-    })
-
-    // Click the revealed button
-    fireEvent.click(screen.getByText(/Generate Goal Plan/i))
-
-    expect(mockSetPhase).toHaveBeenCalledWith('quests')
+    expect(screen.getByTestId('plan-preview')).toBeDefined()
+    expect(screen.getByText(/Continue/i)).toBeDefined()
   })
 
-  it('closing dialog calls reset and closeDialog (cancel path)', async () => {
-    vi.mocked(useGoalDialogStore).mockReturnValue(
-      makeStoreState({ phase: 'gathering', messages: [] }) as never
-    )
-    mockFetchResponses([emptyHistoryResponse])
+  it('confirmed phase: shows Goal Created text, no action buttons', () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState({ phase: 'confirmed' }) as never)
+    stubFetch(emptyHistoryFetch)
 
     render(<GoalCreationDialog />)
 
-    // Click the X close button
+    expect(screen.getAllByText(/Goal Created/i).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Your 90-day journey begins/i)).toBeDefined()
+    // No Create/Skip/Save buttons in this phase
+    expect(screen.queryByText(/Create summary note/i)).toBeNull()
+    expect(screen.queryByText(/Skip/i)).toBeNull()
+    expect(screen.queryByText(/Save note/i)).toBeNull()
+  })
+
+  it('confirmed phase: shows "Saving summary note..." while loading', () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState({ phase: 'confirmed', isLoading: true }) as never)
+    stubFetch(emptyHistoryFetch)
+
+    render(<GoalCreationDialog />)
+
+    expect(screen.getByText(/Saving summary note/i)).toBeDefined()
+  })
+
+  it('synthesis phase: shows "Creating summary note..." (no user interaction)', () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState({ phase: 'synthesis' }) as never)
+    stubFetch(emptyHistoryFetch)
+
+    render(<GoalCreationDialog />)
+
+    expect(screen.getByText(/Creating summary note/i)).toBeDefined()
+    // No input or buttons in synthesis phase
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+})
+
+// ── isReadyToGenerate: user text reply ─────────────────────────────────────────
+
+describe('GoalCreationDialog — isReadyToGenerate user reply', () => {
+  it('text reply after isReadyToGenerate calls setPhase("planning") and fires generateQuests fetch', async () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState() as never)
+
+    const toolOutputChunk =
+      'data: {"type":"tool-output-available","output":{"phase":"quests","goalType":"skill"}}\n'
+
+    let readCount = 0
+    const streamBody = {
+      getReader: () => ({
+        read: vi.fn().mockImplementation(() => {
+          if (readCount === 0) {
+            readCount++
+            return Promise.resolve({ done: false, value: new TextEncoder().encode(toolOutputChunk) })
+          }
+          return Promise.resolve({ done: true, value: undefined })
+        }),
+      }),
+    }
+
+    const fetchMock = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ messages: [] }), body: null })   // GET loadMessages
+      .mockResolvedValueOnce({ ok: true, body: streamBody, json: () => Promise.resolve({}) })           // POST agent (sets isReadyToGenerate)
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ toolResult: { phase: 'planning', quests: [] } }), body: null }) // POST generateQuests
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<GoalCreationDialog />)
+
+    // First message — triggers agent, which returns readyToGenerateQuests
+    const textarea = screen.getByPlaceholderText(/Describe your goal/i)
+    fireEvent.change(textarea, { target: { value: 'I want to learn Rust' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
+
+    // Wait for isReadyToGenerate to be set (placeholder changes)
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/Reply to confirm/i)).toBeDefined()
+    })
+
+    const fetchCallCountBefore = fetchMock.mock.calls.length
+
+    // Second message — should call setPhase('planning') and fire generateQuests fetch
+    const confirmTextarea = screen.getByPlaceholderText(/Reply to confirm/i)
+    fireEvent.change(confirmTextarea, { target: { value: 'Looks good' } })
+    fireEvent.keyDown(confirmTextarea, { key: 'Enter', shiftKey: false })
+
+    expect(mockSetPhase).toHaveBeenCalledWith('planning')
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBeGreaterThan(fetchCallCountBefore)
+    })
+  })
+})
+
+// ── [FIX] handleClose clears DB dialog messages ────────────────────────────────
+
+describe('GoalCreationDialog — [FIX] handleClose fires DELETE to clear stale messages', () => {
+  it('fires DELETE /api/agents/goal-generator?sphereId=... on close', async () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState() as never)
+
+    const fetchMock = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ messages: [] }), body: null })
+      .mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }), body: null })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<GoalCreationDialog />)
+
     const closeBtn = document.querySelector('button[style*="background: none"]') as HTMLButtonElement
-    if (closeBtn) fireEvent.click(closeBtn)
+    expect(closeBtn).not.toBeNull()
+    fireEvent.click(closeBtn)
+
+    await waitFor(() => {
+      const deleteCalls = (fetchMock.mock.calls as [string, RequestInit][])
+        .filter(([, opts]) => opts?.method === 'DELETE')
+      expect(deleteCalls.length).toBeGreaterThan(0)
+      const [url] = deleteCalls[0]!
+      expect(url).toContain('/api/agents/goal-generator')
+      expect(url).toContain('sphereId=sphere-1')
+    })
+
+    expect(mockReset).toHaveBeenCalledOnce()
+    expect(mockCloseDialog).toHaveBeenCalledOnce()
+  })
+
+  it('fires DELETE from planning phase (not just gathering)', async () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(
+      makeStoreState({ phase: 'planning' }) as never
+    )
+
+    const fetchMock = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ messages: [] }), body: null })
+      .mockResolvedValue({ ok: true, json: () => Promise.resolve({ ok: true }), body: null })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<GoalCreationDialog />)
+
+    const closeBtn = document.querySelector('button[style*="background: none"]') as HTMLButtonElement
+    fireEvent.click(closeBtn)
+
+    await waitFor(() => {
+      const deleteCalls = (fetchMock.mock.calls as [string, RequestInit][])
+        .filter(([, opts]) => opts?.method === 'DELETE')
+      expect(deleteCalls.length).toBeGreaterThan(0)
+    })
+
+    expect(mockReset).toHaveBeenCalledOnce()
+    expect(mockCloseDialog).toHaveBeenCalledOnce()
+  })
+
+  it('still closes dialog immediately even when DELETE request fails', async () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState() as never)
+
+    const fetchMock = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ messages: [] }), body: null })
+      .mockRejectedValue(new Error('network error'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<GoalCreationDialog />)
+
+    const closeBtn = document.querySelector('button[style*="background: none"]') as HTMLButtonElement
+    fireEvent.click(closeBtn)
+
+    // reset and closeDialog are called synchronously — DELETE is fire-and-forget
+    expect(mockReset).toHaveBeenCalledOnce()
+    expect(mockCloseDialog).toHaveBeenCalledOnce()
+  })
+
+  it('does NOT fire DELETE when sphereId is null', () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(
+      makeStoreState({ sphereId: null }) as never
+    )
+
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}), body: null })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<GoalCreationDialog />)
+
+    const closeBtn = document.querySelector('button[style*="background: none"]') as HTMLButtonElement
+    fireEvent.click(closeBtn)
+
+    const deleteCalls = (fetchMock.mock.calls as [string, RequestInit][])
+      .filter(([, opts]) => opts?.method === 'DELETE')
+    expect(deleteCalls).toHaveLength(0)
 
     expect(mockReset).toHaveBeenCalledOnce()
     expect(mockCloseDialog).toHaveBeenCalledOnce()
   })
 })
 
-// ── Confirmed phase tests ──────────────────────────────────────────────────────
+// ── loadMessages on open ───────────────────────────────────────────────────────
 
-describe('GoalCreationDialog — confirmed phase', () => {
-  it('shows "Goal Created" and synthesis offer button', () => {
-    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState({ phase: 'confirmed' }) as never)
+describe('GoalCreationDialog — loadMessages', () => {
+  it('on open, fetches GET /api/agents/goal-generator?sphereId=...', async () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState() as never)
 
-    render(<GoalCreationDialog />)
-
-    expect(screen.getByText('Goal Created')).toBeDefined()
-    expect(screen.getByText(/Create summary note/i)).toBeDefined()
-    expect(screen.getByText(/Skip/i)).toBeDefined()
-  })
-
-  it('skip button calls reset and closeDialog', () => {
-    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState({ phase: 'confirmed' }) as never)
-
-    render(<GoalCreationDialog />)
-
-    const skipButton = screen.getAllByText(/Skip/i)[0]!
-    fireEvent.click(skipButton)
-
-    expect(mockReset).toHaveBeenCalledOnce()
-    expect(mockCloseDialog).toHaveBeenCalledOnce()
-  })
-
-  it('"Create summary note" button sends synthesis request to agent', async () => {
-    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState({ phase: 'confirmed' }) as never)
-
-    // 1st call: initial GET for message history; 2nd call: POST to agent (streaming)
-    mockFetchResponses([
-      emptyHistoryResponse,
-      {
-        ok: true,
-        body: makeStreamBody('data: {"type":"text-delta","delta":"Working..."}\n'),
-      },
-    ])
-
-    render(<GoalCreationDialog />)
-
-    const synthesisBtn = screen.getByText(/Create summary note/i)
-    fireEvent.click(synthesisBtn)
-
-    await waitFor(() => {
-      // 2 calls: initial GET + synthesis POST
-      expect(vi.mocked(global.fetch)).toHaveBeenCalledTimes(2)
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ messages: [] }),
+      body: null,
     })
-
-    // Verify the message added to the store contains a request for a note/summary
-    expect(mockAddMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        role: 'user',
-        content: expect.stringMatching(/summar|note/i),
-      })
-    )
-  })
-})
-
-describe('GoalCreationDialog — synthesis phase', () => {
-  const synthesisNote = {
-    title: 'Goal Planning Insights — Python',
-    content: '## Goal Summary\nLearn Python data analysis.\n\n## Key Decisions\n- 4 quests\n',
-  }
-
-  it('shows note title, editable textarea, and action buttons', () => {
-    vi.mocked(useGoalDialogStore).mockReturnValue(
-      makeStoreState({ phase: 'synthesis', synthesisNote }) as never
-    )
+    vi.stubGlobal('fetch', fetchMock)
 
     render(<GoalCreationDialog />)
 
-    expect(screen.getByText(/Goal Planning Insights — Python/i)).toBeDefined()
-    const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
-    expect(textarea.value).toContain('## Goal Summary')
-    expect(screen.getByText(/Save note/i)).toBeDefined()
-  })
-
-  it('save note button calls POST /api/notes/goal/{goalId} and closes dialog', async () => {
-    vi.mocked(useGoalDialogStore).mockReturnValue(
-      makeStoreState({ phase: 'synthesis', synthesisNote, createdGoalId: 'goal-42' }) as never
-    )
-
-    // 1st: initial GET; 2nd: POST to /api/notes/goal/{goalId}
-    mockFetchResponses([
-      emptyHistoryResponse,
-      { ok: true, json: () => Promise.resolve({ note: { id: 'note-1' } }) },
-    ])
-
-    render(<GoalCreationDialog />)
-
-    const saveBtn = screen.getByText(/Save note/i)
-    fireEvent.click(saveBtn)
-
     await waitFor(() => {
-      expect(vi.mocked(global.fetch)).toHaveBeenCalledTimes(2)
-    })
-
-    const fetchCalls = (vi.mocked(global.fetch) as ReturnType<typeof vi.fn>).mock.calls as [string, RequestInit][]
-    const noteCall = fetchCalls.find(([url]) => url.includes('/api/notes/'))
-    expect(noteCall).toBeDefined()
-    expect(noteCall![0]).toBe('/api/notes/goal/goal-42')
-    expect(noteCall![1].method).toBe('POST')
-
-    await waitFor(() => {
-      expect(mockReset).toHaveBeenCalledOnce()
-      expect(mockCloseDialog).toHaveBeenCalledOnce()
+      const getCall = (fetchMock.mock.calls as [string, RequestInit | undefined][])
+        .find(([url, opts]) => url.includes('goal-generator') && (!opts || opts.method === undefined || opts.method === 'GET'))
+      expect(getCall).toBeDefined()
+      expect(getCall![0]).toContain('sphereId=sphere-1')
     })
   })
 
-  it('skip button in synthesis phase closes dialog without POST to notes', async () => {
-    vi.mocked(useGoalDialogStore).mockReturnValue(
-      makeStoreState({ phase: 'synthesis', synthesisNote }) as never
-    )
+  it('populates messages store when history exists', async () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState() as never)
 
-    mockFetchResponses([emptyHistoryResponse])
+    const existingMessages = [
+      { role: 'user', content: 'Hello' },
+      { role: 'assistant', content: 'Hi there' },
+    ]
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ messages: existingMessages }),
+      body: null,
+    })
+    vi.stubGlobal('fetch', fetchMock)
 
     render(<GoalCreationDialog />)
 
-    const skipBtn = screen.getByText(/Skip/i)
-    fireEvent.click(skipBtn)
-
-    // No call to /api/notes — only the initial history GET
-    const fetchCalls = (vi.mocked(global.fetch) as ReturnType<typeof vi.fn>).mock.calls as [string][]
-    const notesCalls = fetchCalls.filter(([url]) => url.includes('/api/notes/'))
-    expect(notesCalls).toHaveLength(0)
-
-    expect(mockReset).toHaveBeenCalledOnce()
-    expect(mockCloseDialog).toHaveBeenCalledOnce()
+    await waitFor(() => {
+      expect(mockAddMessage).toHaveBeenCalledTimes(2)
+      expect(mockAddMessage).toHaveBeenCalledWith({ role: 'user', content: 'Hello' })
+      expect(mockAddMessage).toHaveBeenCalledWith({ role: 'assistant', content: 'Hi there' })
+    })
   })
 
-  it('save button is disabled when content is empty', () => {
-    vi.mocked(useGoalDialogStore).mockReturnValue(
-      makeStoreState({ phase: 'synthesis', synthesisNote: { title: 'T', content: '' } }) as never
-    )
+  it('does not call addMessage when history is empty', async () => {
+    vi.mocked(useGoalDialogStore).mockReturnValue(makeStoreState() as never)
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ messages: [] }),
+      body: null,
+    })
+    vi.stubGlobal('fetch', fetchMock)
 
     render(<GoalCreationDialog />)
 
-    const saveBtn = screen.getByText(/Save note/i).closest('button')
-    expect(saveBtn?.disabled).toBe(true)
+    // Wait a tick for loadMessages to complete
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 50))
+    })
+
+    expect(mockAddMessage).not.toHaveBeenCalled()
   })
 })

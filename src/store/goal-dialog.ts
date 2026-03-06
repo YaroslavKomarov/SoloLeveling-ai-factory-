@@ -19,6 +19,7 @@ interface GoalDialogState {
   phase: DialogPhase
   messages: DialogMessage[]
   draftGoalType: GoalType | null
+  draftGoalTitle: string | null
   draftQuests: QuestDraft[]
   planResult: GoalPlanResult | null
   isLoading: boolean
@@ -37,6 +38,7 @@ interface GoalDialogState {
   setDraftQuests: (quests: QuestDraft[]) => void
   updateDraftQuest: (index: number, updates: Partial<QuestDraft>) => void
   setDraftGoalType: (type: GoalType) => void
+  setDraftGoalTitle: (title: string) => void
   setPlanResult: (result: GoalPlanResult) => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
@@ -51,6 +53,7 @@ const initialState = {
   phase: 'idle' as DialogPhase,
   messages: [],
   draftGoalType: null,
+  draftGoalTitle: null,
   draftQuests: [],
   planResult: null,
   isLoading: false,
@@ -133,6 +136,8 @@ export const useGoalDialogStore = create<GoalDialogState>((set) => ({
     })),
 
   setDraftGoalType: (type) => set({ draftGoalType: type }),
+
+  setDraftGoalTitle: (title) => set({ draftGoalTitle: title }),
 
   setPlanResult: (result) => set({ planResult: result }),
 

@@ -22,8 +22,9 @@ export const readyToGenerateQuests = tool({
   description:
     'Call this PROACTIVELY when you have gathered enough information about the user\'s goal to determine its type and generate key results. ' +
     'Do NOT wait for the user to ask you to proceed — call this tool yourself as soon as you have sufficient context. ' +
-    'Do NOT suggest the user click any button before calling this tool. ' +
-    'Calling this signals the transition from gathering to quest generation and reveals the Generate button in the UI.',
+    'Do NOT mention or suggest any button. After calling this tool, ask for a short text confirmation in your streamed reply ' +
+    '(e.g. "Ready to generate your quest plan. Reply to confirm and I\'ll proceed."). ' +
+    'The user\'s next text reply will automatically trigger quest generation — no button click required.',
   // [FIX] AI SDK v6 uses `inputSchema`, not `parameters`. Using `parameters` caused
   // tool.inputSchema to be undefined → asSchema(undefined) returned an empty schema
   // with additionalProperties:false → all model inputs failed Zod validation →
@@ -52,14 +53,13 @@ export const readyToGenerateQuests = tool({
 // Produces 3-5 quest drafts (key results) with task structure.
 // =============================================================
 
-export const generateQuests = tool({
-  description:
-    'Generate 3–5 quest drafts (key results) for the goal. ' +
-    'Each quest must have a numeric target, unit, and task breakdown. ' +
-    'Call this after readyToGenerateQuests or when the user asks to regenerate quests.',
-  // [FIX] Renamed parameters → inputSchema (see readyToGenerateQuests comment above)
-  inputSchema: z.object({
-    quests: z
+export const generateQuestsSchema = z.object({
+  goalTitle: z.string().min(5).max(80).describe(
+    'Short, specific goal title (max 80 chars). ' +
+    'Examples: "Master pen spinning basics in 90 days", "Build Python data analysis skills". ' +
+    'Must reflect the actual goal discussed, not a generic phrase.'
+  ),
+  quests: z
       .array(
         z.object({
           title: z.string().describe('Quest title — the key result being measured, e.g. "Complete 30 Python exercises"'),
@@ -107,10 +107,19 @@ export const generateQuests = tool({
       )
       .min(3)
       .max(5),
-  }),
-  execute: async ({ quests }) => {
+})
+
+export const generateQuests = tool({
+  description:
+    'Generate 3–5 quest drafts (key results) for the goal. ' +
+    'Each quest must have a numeric target, unit, and task breakdown. ' +
+    'Call this after readyToGenerateQuests or when the user asks to regenerate quests.',
+  // [FIX] Renamed parameters → inputSchema (see readyToGenerateQuests comment above)
+  inputSchema: generateQuestsSchema,
+  execute: async ({ goalTitle, quests }) => {
     // [FIX] Use optional chaining — fallback path bypasses Zod so args may be missing
     logger.debug('generateQuests called', {
+      goalTitle,
       questCount: quests?.length ?? 0,
       totalRegular: quests?.reduce((s, q) => s + q.regularTaskCount, 0) ?? 0,
       totalStrategic: quests?.reduce((s, q) => s + q.strategicTaskCount, 0) ?? 0,
@@ -121,7 +130,7 @@ export const generateQuests = tool({
       regularDescriptionLengths: quests?.map(q => q.regularTaskDescription?.length ?? 0) ?? [],
       strategicDescriptionCounts: quests?.map(q => q.strategicTaskDescriptions?.length ?? 0) ?? [],
     })
-    return { phase: 'planning', quests }
+    return { phase: 'planning', goalTitle, quests }
   },
 })
 

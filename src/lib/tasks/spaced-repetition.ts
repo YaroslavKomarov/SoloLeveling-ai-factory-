@@ -173,9 +173,16 @@ export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
 
         for (let di = 0; di < dates.length; di++) {
           const date = dates[di]
+          const regularTitle = quest.regularTaskTitle ?? quest.title
+          logger.debug('regular task title source', {
+            questIndex: qi,
+            taskIndex: ri,
+            source: quest.regularTaskTitle ? 'regularTaskTitle' : 'quest.title',
+            title: regularTitle,
+          })
           tasks.push({
             questIndex: qi,
-            title: quest.title,
+            title: regularTitle,
             taskType: 'regular',
             scheduledDate: date,
             xpReward: XP_REGULAR,
@@ -202,9 +209,17 @@ export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
 
       for (let si = 0; si < strategicDates.length; si++) {
         const date = strategicDates[si]
+        const specificTitle = quest.strategicTaskTitles?.[si]
+        const strategicTitle = specificTitle ?? `${quest.title} — Strategic Session ${si + 1}`
+        logger.debug('strategic task title source', {
+          questIndex: qi,
+          sessionIndex: si,
+          source: specificTitle ? 'strategicTaskTitles' : 'generated',
+          title: strategicTitle,
+        })
         tasks.push({
           questIndex: qi,
-          title: `${quest.title} — Strategic Session ${si + 1}`,
+          title: strategicTitle,
           taskType: 'strategic',
           scheduledDate: date,
           xpReward: XP_STRATEGIC,

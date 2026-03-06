@@ -11,7 +11,7 @@ import { Card, CardContent } from '@/components/ui/Card'
 import { Progress } from '@/components/ui/Progress'
 import { QuestItem } from '@/components/goals/QuestItem'
 import { GoalAtRiskBanner } from '@/components/goals/GoalAtRiskBanner'
-import { GoalNotesModal } from '@/components/goals/GoalNotesModal'
+import { GoalNotesPanel } from '@/components/goals/GoalNotesPanel'
 import { GoalExpertPanel } from '@/components/goals/GoalExpertPanel'
 import { createLogger } from '@/lib/logger'
 import { useGoalsStore } from '@/store/goals'
@@ -135,11 +135,11 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
   const updateGoal = useGoalsStore(s => s.updateGoal)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
-  const [showNotesModal, setShowNotesModal] = useState(false)
   const [mounted, setMounted] = useState(false)
 
   // Tab state — controlled by URL query param
-  const tab = searchParams.get('tab') === 'expert' ? 'expert' : 'goal'
+  const rawTab = searchParams.get('tab')
+  const tab = rawTab === 'expert' ? 'expert' : rawTab === 'notes' ? 'notes' : 'goal'
 
   // Initial task session from query params (when redirected from strategic task start)
   const newTaskId = searchParams.get('newTaskSession')
@@ -324,15 +324,19 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
               Expert Chat
             </button>
             <button
-              onClick={() => setShowNotesModal(true)}
+              onClick={() => {
+                const params = new URLSearchParams(searchParams.toString())
+                params.set('tab', 'notes')
+                router.push(`/app/goals/${goal.id}?${params.toString()}`)
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.375rem',
                 background: 'none',
-                border: '1px solid rgba(255,255,255,0.15)',
+                border: tab === 'notes' ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(255,255,255,0.1)',
                 cursor: 'pointer',
-                color: 'rgba(255,255,255,0.5)',
+                color: tab === 'notes' ? '#ffffff' : 'rgba(255,255,255,0.4)',
                 fontFamily: 'Cinzel, serif',
                 fontSize: '0.65rem',
                 letterSpacing: '0.08em',
@@ -342,7 +346,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
               }}
             >
               <FileText size={12} />
-              Goal Notes
+              Notes
             </button>
           </div>
         </div>
@@ -384,6 +388,18 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
           style={{ marginBottom: '2rem' }}
         >
           <GoalExpertPanel goalId={goal.id} initialTaskSession={initialTaskSession} />
+        </motion.div>
+      )}
+
+      {/* Notes tab */}
+      {tab === 'notes' && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2 }}
+          style={{ marginBottom: '2rem' }}
+        >
+          <GoalNotesPanel goal={goal} />
         </motion.div>
       )}
 
@@ -556,16 +572,6 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
           </Button>
         </div>
       )}
-
-      {/* Goal Notes modal */}
-      <AnimatePresence>
-        {showNotesModal && (
-          <GoalNotesModal
-            goal={goal}
-            onClose={() => setShowNotesModal(false)}
-          />
-        )}
-      </AnimatePresence>
 
       {/* Cancel confirmation modal — rendered via portal to escape PageTransition stacking context */}
       {mounted && createPortal(

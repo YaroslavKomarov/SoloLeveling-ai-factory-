@@ -7,8 +7,22 @@
  */
 import { describe, it, expect } from 'vitest'
 import { GOAL_GENERATOR_SYSTEM_PROMPT } from '../prompt'
-import { generateQuests } from '../tools'
-import { z } from 'zod'
+import { generateQuestsSchema } from '../tools'
+
+describe('GOAL_GENERATOR_SYSTEM_PROMPT — template literal integrity', () => {
+  it('is a non-empty string (no unescaped backticks breaking the template literal)', () => {
+    expect(typeof GOAL_GENERATOR_SYSTEM_PROMPT).toBe('string')
+    expect(GOAL_GENERATOR_SYSTEM_PROMPT.length).toBeGreaterThan(500)
+  })
+
+  it('contains regularTaskDescription field reference', () => {
+    expect(GOAL_GENERATOR_SYSTEM_PROMPT).toContain('regularTaskDescription')
+  })
+
+  it('contains strategicTaskDescriptions field reference', () => {
+    expect(GOAL_GENERATOR_SYSTEM_PROMPT).toContain('strategicTaskDescriptions')
+  })
+})
 
 describe('GOAL_GENERATOR_SYSTEM_PROMPT — Task Formulation Rules', () => {
   it('contains Task Formulation Rules section header', () => {
@@ -35,33 +49,25 @@ describe('GOAL_GENERATOR_SYSTEM_PROMPT — Task Formulation Rules', () => {
 })
 
 describe('generateQuests schema — task title constraints', () => {
-  // Extract the quest schema from the tool's inputSchema
-  const questsSchema = (generateQuests.inputSchema as z.ZodObject<{ quests: z.ZodArray<z.ZodObject<Record<string, z.ZodTypeAny>>> }>)
-    .shape.quests.element
+  const questSchema = generateQuestsSchema.shape.quests.element
 
   it('regularTaskTitle has minLength constraint (≥ 10 chars)', () => {
-    const schema = questsSchema.shape.regularTaskTitle
-    // Must reject short strings
-    const result = schema.safeParse('Too short')
+    const result = questSchema.shape.regularTaskTitle.safeParse('Too short')
     expect(result.success).toBe(false)
   })
 
   it('regularTaskTitle accepts a valid specific title', () => {
-    const schema = questsSchema.shape.regularTaskTitle
-    const result = schema.safeParse('Complete freeCodeCamp JS array methods exercises')
+    const result = questSchema.shape.regularTaskTitle.safeParse('Complete freeCodeCamp JS array methods exercises')
     expect(result.success).toBe(true)
   })
 
   it('strategicTaskTitles items have minLength constraint (≥ 15 chars)', () => {
-    const schema = questsSchema.shape.strategicTaskTitles
-    // Array with a short item must fail
-    const result = schema.safeParse(['Too short'])
+    const result = questSchema.shape.strategicTaskTitles.safeParse(['Too short'])
     expect(result.success).toBe(false)
   })
 
   it('strategicTaskTitles accepts valid specific titles', () => {
-    const schema = questsSchema.shape.strategicTaskTitles
-    const result = schema.safeParse([
+    const result = questSchema.shape.strategicTaskTitles.safeParse([
       'Analyse competitor pricing data → comparison table in notes',
       'Write chapter 3 outline → 500-word draft saved as note',
     ])
@@ -69,8 +75,7 @@ describe('generateQuests schema — task title constraints', () => {
   })
 
   it('strategicTaskTitles rejects empty string items', () => {
-    const schema = questsSchema.shape.strategicTaskTitles
-    const result = schema.safeParse([''])
+    const result = questSchema.shape.strategicTaskTitles.safeParse([''])
     expect(result.success).toBe(false)
   })
 })

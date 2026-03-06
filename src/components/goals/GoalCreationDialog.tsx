@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { X, Send, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
-import { QuestEditor } from './QuestEditor'
 import { PlanPreview } from './PlanPreview'
 import { useGoalDialogStore } from '@/store/goal-dialog'
 import { useGoalsStore } from '@/store/goals'
@@ -18,10 +17,10 @@ const logger = createLogger('GoalCreationDialog')
 export function GoalCreationDialog() {
   const {
     isOpen, sphereId, phase, messages,
-    draftQuests, draftGoalType, planResult,
+    draftQuests, draftGoalType, draftGoalTitle, planResult,
     isLoading, error, synthesisNote, createdGoalId,
     setPhase, addMessage, setStreamingMessage, finalizeStreamingMessage,
-    setDraftQuests, setDraftGoalType, setPlanResult,
+    setDraftQuests, setDraftGoalType, setDraftGoalTitle, setPlanResult,
     setLoading, setError, setSynthesisNote, setCreatedGoalId,
     closeDialog, reset,
   } = useGoalDialogStore()
@@ -194,11 +193,23 @@ export function GoalCreationDialog() {
     if (!content.trim() || !sphereId || isLoading) return
 
     if (process.env.NODE_ENV === 'development') {
-      console.debug('[GoalCreationDialog] sending message', { phase, messageLength: content.length })
+      console.debug('[GoalCreationDialog] sending message', { phase, isReadyToGenerate, messageLength: content.length })
     }
 
     addMessage({ role: 'user', content })
     setInputValue('')
+
+    // If agent already signaled ready, any text reply is confirmation — auto-generate quests
+    if (isReadyToGenerate) {
+      logger.debug('[GoalCreationDialog] user confirmed generation — auto-generating quests')
+      setPhase('planning')
+      void callAgent(
+        'Generate the quest plan now based on our conversation.',
+        { forceGenerate: true, forceToolName: 'generateQuests' }
+      )
+      return
+    }
+
     await callAgent(content)
   }
 
@@ -210,13 +221,7 @@ export function GoalCreationDialog() {
 
       if (r.phase === 'quests' && r.goalType) {
         setDraftGoalType(r.goalType as 'skill' | 'knowledge')
-        // T07: instead of immediately transitioning, reveal the Generate button
-        // and add a system message — user confirms when ready
         setIsReadyToGenerate(true)
-        addMessage({
-          role: 'assistant',
-          content: 'I have everything I need. Click **Generate Goal Plan** when ready.',
-        })
         logger.debug('[GoalCreationDialog] readyToGenerate signal received', { goalType: r.goalType })
       }
 
@@ -229,7 +234,9 @@ export function GoalCreationDialog() {
           regularTaskCount: number
           strategicTaskCount: number
           fatigueType?: 'physical' | 'emotional' | 'intellectual'
+          regularTaskTitle?: string
           regularTaskDescription?: string
+          strategicTaskTitles?: string[]
           strategicTaskDescriptions?: string[]
         }>).map((q, i) => ({
           title: q.title,
@@ -237,7 +244,9 @@ export function GoalCreationDialog() {
           unit: q.unit,
           orderIndex: i,
           fatigueType: q.fatigueType,
+          regularTaskTitle: q.regularTaskTitle,
           regularTaskDescription: q.regularTaskDescription,
+          strategicTaskTitles: q.strategicTaskTitles,
           strategicTaskDescriptions: q.strategicTaskDescriptions,
         }))
 
@@ -250,6 +259,12 @@ export function GoalCreationDialog() {
         }))
 
         setDraftQuests(drafts)
+
+        // Store agent-generated goal title
+        if (r.goalTitle) {
+          logger.debug('[GoalCreationDialog] goal title received from agent', { goalTitle: r.goalTitle })
+          setDraftGoalTitle(r.goalTitle as string)
+        }
 
         // Generate 90-day plan
         const today = new Date().toISOString().slice(0, 10)
@@ -298,6 +313,7 @@ export function GoalCreationDialog() {
         body: JSON.stringify({
           sphereId,
           goalType: draftGoalType,
+          title: draftGoalTitle ?? undefined,
           quests: draftQuests,
           tasks: planResult.tasks,
           startDate: today,
@@ -342,6 +358,11 @@ export function GoalCreationDialog() {
 
   const handleClose = () => {
     logger.debug('[GoalCreationDialog] user cancelled, resetting state', { phase, isReadyToGenerate })
+    // [FIX] Always clear DB messages on close so next goal creation starts with empty chat
+    if (sphereId) {
+      fetch(`/api/agents/goal-generator?sphereId=${sphereId}`, { method: 'DELETE' })
+        .catch(err => logger.warn('[FIX] failed to clear dialog messages on close', { error: err instanceof Error ? err.message : String(err) }))
+    }
     reset()
     closeDialog()
   }
@@ -444,7 +465,6 @@ export function GoalCreationDialog() {
                 }}
               >
                 {phase === 'gathering' && 'Tell me about your goal'}
-                {phase === 'quests' && 'Review and edit your key results'}
                 {phase === 'planning' && 'Generating 90-day plan...'}
                 {phase === 'preview' && 'Review your 90-day schedule'}
                 {phase === 'confirmed' && 'Goal created'}
@@ -505,19 +525,6 @@ export function GoalCreationDialog() {
                   <div ref={messagesEndRef} />
                 </div>
               </>
-            )}
-
-            {/* QUESTS phase: quest editor */}
-            {phase === 'quests' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: 'rgba(255,255,255,0.6)', margin: 0 }}>
-                  Review and edit the key results for your goal. Each quest defines a measurable outcome.
-                </p>
-                <QuestEditor
-                  quests={draftQuests}
-                  onChange={setDraftQuests}
-                />
-              </div>
             )}
 
             {/* PLANNING phase: loading */}
@@ -585,7 +592,7 @@ export function GoalCreationDialog() {
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Describe your goal... (Enter to send, Shift+Enter for newline)"
+                  placeholder={isReadyToGenerate ? 'Reply to confirm and generate your plan...' : 'Describe your goal... (Enter to send, Shift+Enter for newline)'}
                   rows={2}
                   disabled={isLoading}
                   style={{ resize: 'none', flex: 1 }}
@@ -599,54 +606,6 @@ export function GoalCreationDialog() {
                   <Send size={16} />
                 </Button>
               </div>
-              {isReadyToGenerate && !isLoading && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                  <Button
-                    onClick={() => {
-                      logger.debug('[GoalCreationDialog] user confirmed generation')
-                      setPhase('quests')
-                    }}
-                    variant="ghost"
-                    style={{ fontSize: '0.8125rem', opacity: 0.7 }}
-                  >
-                    Generate Goal Plan →
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {phase === 'quests' && (
-            <div
-              style={{
-                padding: '0.875rem 1.25rem',
-                borderTop: '1px solid rgba(255,255,255,0.1)',
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '0.5rem',
-                flexShrink: 0,
-              }}
-            >
-              <Button variant="ghost" onClick={() => setPhase('gathering')}>
-                Back to Chat
-              </Button>
-              <Button
-                onClick={() => {
-                  const valid = draftQuests.length === 0 || draftQuests.every(q => q.title.trim() && q.targetValue > 0 && q.unit.trim())
-                  if (!valid) { setError('All quest fields are required'); return }
-                  setError(null)
-                  setPhase('planning')
-                  console.log('[FIX] Generate Plan clicked', { questCount: draftQuests.length })
-                  const questTitles = draftQuests.map(q => q.title).filter(Boolean).join(', ')
-                  void callAgent(
-                    `Generate the quest plan now. Quests: ${questTitles || '(as discussed)'}`,
-                    { forceGenerate: true, forceToolName: 'generateQuests' }
-                  )
-                }}
-                isLoading={isLoading}
-              >
-                Generate Plan
-              </Button>
             </div>
           )}
 
@@ -657,15 +616,11 @@ export function GoalCreationDialog() {
                 borderTop: '1px solid rgba(255,255,255,0.1)',
                 display: 'flex',
                 justifyContent: 'flex-end',
-                gap: '0.5rem',
                 flexShrink: 0,
               }}
             >
-              <Button variant="ghost" onClick={() => setPhase('quests')}>
-                Edit Quests
-              </Button>
               <Button onClick={handleConfirm} isLoading={isLoading}>
-                Confirm Goal
+                Continue
               </Button>
             </div>
           )}

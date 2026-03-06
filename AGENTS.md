@@ -83,13 +83,18 @@ SoloLevelingAiFactory/
 │   │   │   │   └── [goalId]/
 │   │   │   │       ├── cancel/route.ts                 # POST → cancel goal
 │   │   │   │       ├── fail/route.ts                   # POST → mark goal failed
-│   │   │   │       └── acknowledge-failure/route.ts    # POST → acknowledge failure
+│   │   │   │       ├── acknowledge-failure/route.ts    # POST → acknowledge failure
+│   │   │   │       ├── chat/route.ts                   # GET list sessions / POST create session
+│   │   │   │       └── chat/[sessionId]/
+│   │   │   │           ├── route.ts                    # POST → stream goal-expert agent response
+│   │   │   │           └── messages/route.ts           # GET → load session message history
 │   │   │   ├── tasks/
 │   │   │   │   ├── [taskId]/complete/route.ts          # POST → complete task, award XP
 │   │   │   │   └── [taskId]/skip/route.ts              # POST → skip task
 │   │   │   ├── notes/
 │   │   │   │   ├── route.ts                            # GET list / POST create
 │   │   │   │   ├── [noteId]/route.ts                   # GET / PATCH / DELETE
+│   │   │   │   ├── goal/[goalId]/route.ts              # GET goal note / POST create goal summary note
 │   │   │   │   └── images/route.ts                     # POST → upload image to Supabase Storage
 │   │   │   ├── notifications/
 │   │   │   │   ├── subscribe/route.ts                  # POST → save push subscription
@@ -134,10 +139,14 @@ SoloLevelingAiFactory/
 │   │   │   ├── SphereCard.tsx                          # Sphere card with goal count
 │   │   │   ├── GoalCard.tsx                            # Goal card: status, progress, days left
 │   │   │   ├── CreateSphereModal.tsx                   # Create sphere dialog
-│   │   │   ├── GoalCreationDialog.tsx                  # Multi-turn goal creation chat UI
-│   │   │   ├── QuestEditor.tsx                         # Edit generated quests before confirming
+│   │   │   ├── GoalCreationDialog.tsx                  # Multi-turn goal creation chat UI (gathering → planning → preview)
+│   │   │   ├── GoalDialogModal.tsx                     # Modal wrapper for GoalCreationDialog
+│   │   │   ├── GoalExpertPanel.tsx                     # AI mentor panel for active goal (multi-session chat)
+│   │   │   ├── GoalNotesPanel.tsx                      # Inline notes panel for a goal (tab in goal detail)
+│   │   │   ├── GoalNotesModal.tsx                      # Modal variant of goal notes (legacy)
+│   │   │   ├── QuestEditor.tsx                         # Quest editor (standalone, not part of generation flow)
 │   │   │   ├── QuestItem.tsx                           # Single quest progress row
-│   │   │   ├── PlanPreview.tsx                         # Calendar preview of generated task plan
+│   │   │   ├── PlanPreview.tsx                         # 90-day heat-map calendar preview of generated plan
 │   │   │   ├── GoalAtRiskBanner.tsx                    # Banner when goal is at risk
 │   │   │   ├── GoalFailureDialog.tsx                   # Failure acknowledgment + new goal prompt
 │   │   │   └── index.ts                                # Barrel export
@@ -192,7 +201,7 @@ SoloLevelingAiFactory/
 │   │   │   ├── goal-generator/
 │   │   │   │   ├── prompt.ts                          # System prompt for goal-generator
 │   │   │   │   ├── context.ts                         # Build context from user profile + active goals
-│   │   │   │   └── tools.ts                           # Tool definitions: validateLoad, checkCalendar
+│   │   │   │   └── tools.ts                           # Tools: readyToGenerateQuests, generateQuests, validateLoad, suggestNoteContent
 │   │   │   ├── daily-planner/
 │   │   │   │   ├── index.ts                           # runDailyPlanner() entry point
 │   │   │   │   ├── prompt.ts                          # System prompt for daily-planner
@@ -201,6 +210,10 @@ SoloLevelingAiFactory/
 │   │   │   │   ├── index.ts                           # runRetrospectiveAnalyzer() entry point
 │   │   │   │   ├── prompt.ts                          # System prompt for retro-analyzer
 │   │   │   │   └── tools.ts                           # Tools: getGoalStats, suggestAdjustments
+│   │   │   ├── goal-expert/
+│   │   │   │   ├── index.ts                           # runGoalExpert() — streaming multi-session chat
+│   │   │   │   ├── prompt.ts                          # System prompt for goal expert mentor
+│   │   │   │   └── tools.ts                           # Tools: synthesizeNote, getGoalContext
 │   │   │   └── knowledge-rag/
 │   │   │       ├── index.ts                           # runKnowledgeRag() entry point
 │   │   │       ├── prompt.ts                          # System prompt for RAG agent
@@ -229,7 +242,8 @@ SoloLevelingAiFactory/
 │   │   ├── user.ts                                    # Zustand: level, xp, xpToNext, fatigue (3 types)
 │   │   ├── onboarding.ts                              # Zustand: currentStep, data
 │   │   ├── goals.ts                                   # Zustand: spheres, goals, generation state
-│   │   ├── goal-dialog.ts                             # Zustand: goal creation dialog messages
+│   │   ├── goal-dialog.ts                             # Zustand: goal creation dialog messages + phases
+│   │   ├── goal-expert.ts                             # Zustand: expert chat sessions, messages, streaming
 │   │   ├── tasks.ts                                   # Zustand: today's tasks list + actions
 │   │   ├── retrospective.ts                           # Zustand: wizard state + feedback
 │   │   └── knowledge.ts                               # Zustand: file tree, open note, search
@@ -307,6 +321,7 @@ SoloLevelingAiFactory/
 | Agent | Route | Lib | Model |
 |-------|-------|-----|-------|
 | goal-generator | `src/app/api/agents/goal-generator/route.ts` | `src/lib/agents/goal-generator/` | Sonnet 4.6 |
+| goal-expert | `src/app/api/goals/[goalId]/chat/[sessionId]/route.ts` | `src/lib/agents/goal-expert/` | Sonnet 4.6 |
 | daily-planner | `src/app/api/agents/daily-planner/route.ts` | `src/lib/agents/daily-planner/` | Haiku 4.5 |
 | retrospective-analyzer | `src/app/api/agents/retrospective-analyzer/route.ts` | `src/lib/agents/retrospective-analyzer/` | Sonnet 4.6 |
 | knowledge-rag | `src/app/api/agents/knowledge-rag/route.ts` | `src/lib/agents/knowledge-rag/` | Haiku 4.5 |

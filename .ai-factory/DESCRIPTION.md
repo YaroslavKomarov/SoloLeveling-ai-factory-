@@ -49,8 +49,8 @@ SoloLeveling v2 is a PWA for goal planning and achievement based on the ASE v3.0
 - RAG: pgvector semantic search, wikilinks graph traversal, 2-level context depth
 
 ### Google Calendar Integration
-- Mandatory connection during onboarding (OAuth 2.0, read-only)
-- All tasks slotted into free periods of user's activity window
+- Mandatory connection during onboarding (OAuth 2.0, read/write)
+- Tasks are slotted into free periods of user's activity window AND written as calendar events
 - Conflicts processed at midnight (not in real time)
 - Interleaving rules: alternate fatigue types, alternate goals (except first 1–2 weeks of goal)
 - Break rules: 5 min after regular, 10 min after strategic, 15–20 min after ~90 min or 4 tasks
@@ -63,7 +63,7 @@ SoloLeveling v2 is a PWA for goal planning and achievement based on the ASE v3.0
 
 ## Tech Stack
 - **Language:** TypeScript (strict mode)
-- **Framework:** Next.js 14+ (App Router, Server Components)
+- **Framework:** Next.js 15 (App Router, Server Components)
 - **Styling:** Tailwind CSS with custom design system
 - **State:** Zustand
 - **Forms/Validation:** React Hook Form + Zod
@@ -87,14 +87,14 @@ Six agents implemented as API routes using Vercel AI SDK (`streamText`, `generat
 
 | Agent | Model | Role |
 |-------|-------|------|
-| `goal-generator` | Sonnet 4.6 | Dialog-based goal creation, quest generation, 90-day task plan, load validation |
+| `goal-generator` | Sonnet 4.6 | Dialog-based goal creation → auto-generates quests → 90-day task plan; no manual quest editor |
+| `goal-expert` | Sonnet 4.6 | Persistent mentor for active goal; multi-session chat; context = goal + quests + notes; synthesizes notes |
 | `daily-planner` | Haiku 4.5 | Nightly task scheduling into calendar slots, interleaving, skip detection |
 | `task-redistributor` | Haiku 4.5 | Compaction algorithm for missed strategic tasks; cascade rescheduling |
 | `retrospective-analyzer` | Sonnet 4.6 | Weekly analysis, pattern detection, task content adjustments, fatigue corrections |
 | `knowledge-rag` | Haiku 4.5 | Semantic search via pgvector, wikilinks traversal, RAG answer with source links |
-| `goal-dialog-agent` | Sonnet 4.6 | Mentor/expert for strategic task execution; context = goal + quests + notes + task statement; mandatory note synthesis |
 
-Context management: rolling summary + last N messages (prevents context overflow in long dialogs).
+Context management: sliding window — knowledge-rag trims conversation history to last 10 messages before each LLM call (`MAX_HISTORY_MESSAGES` constant in `knowledge-rag/index.ts`). Other agents (goal-expert, goal-generator) use multi-session persistence handled at the API route level.
 
 ## Database Entities (Supabase PostgreSQL)
 Users, Spheres, Goals, Quests/Key Results, Tasks (with spaced repetition state), Daily Fatigue, Notes (content as TEXT + metadata columns; images in Storage), Embedding Queue, Embeddings (pgvector), Behavior Patterns, Retrospectives, Google Calendar event cache.
@@ -118,9 +118,8 @@ Dark gothic minimalism. Full spec in `./design/`:
 
 ## Constraints (v1.0 scope)
 - Single user (no collaboration)
-- English UI
+- UI language adapts to user's language (English/Russian supported)
 - Web only (mobile apps in v2.0)
-- Google Calendar read-only (event creation in v2.0)
 
 ## Key Business Rules (quick reference)
 - Goals: always 90 days, no extensions, no reformulation after creation

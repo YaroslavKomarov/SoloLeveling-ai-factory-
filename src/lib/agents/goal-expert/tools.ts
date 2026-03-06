@@ -14,7 +14,9 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createLogger } from '@/lib/logger'
 import { decryptToken } from '@/lib/calendar/encryption'
+import type { OAuthTokens } from '@/lib/calendar/oauth'
 import { updateTaskEvent } from '@/lib/calendar/event-sync'
+import { getTasksByGoal } from '@/lib/supabase/tasks'
 
 const logger = createLogger('GoalExpert/tools')
 
@@ -278,6 +280,7 @@ export const listGoalNotes = tool({
 // =============================================================
 // Tool 4: updateTask
 // Updates a task's title or description.
+// For regular tasks: updates ALL Ebbinghaus instances with the same title.
 // =============================================================
 
 export const updateTask = tool({
@@ -286,37 +289,84 @@ export const updateTask = tool({
     'and only call this tool after the user approves. Use for rephrasing, clarifying, or adding specific steps to a task.',
   inputSchema: z.object({
     userId: z.string().describe('The user ID (needed for calendar sync)'),
-    taskId: z.string().describe('The UUID of the task to update'),
+    taskId: z.string().describe('The UUID of the task to update (from listGoalTasks)'),
     newTitle: z.string().describe('The new task title'),
     newDescription: z.string().optional().describe('Optional new step-by-step description (3–5 concrete actions the user should take)'),
   }),
   execute: async ({ userId, taskId, newTitle, newDescription }) => {
-    logger.debug('[goal-expert] tool called', { tool: 'updateTask', taskId, userId })
+    logger.debug('[FIX] updateTask called', { taskId, userId, newTitle })
 
     try {
       const supabase = await createClient()
 
-      const updates: Record<string, string> = { title: newTitle }
-      if (newDescription) {
-        updates.description = newDescription
-      }
-
-      const { data: task, error } = await supabase
+      // Step 1: Fetch target task metadata to determine how to update
+      const { data: targetTask, error: fetchError } = await supabase
         .from('tasks')
-        .update(updates)
+        .select('id, title, task_type, goal_id, calendar_event_id')
         .eq('id', taskId)
-        .select('id, title, calendar_event_id')
         .single()
 
-      if (error || !task) {
-        logger.error('[goal-expert] updateTask failed', { taskId, error: error?.message })
-        return { error: 'Failed to update task' }
+      if (fetchError || !targetTask) {
+        logger.error('[FIX] updateTask — task not found', { taskId, error: fetchError?.message })
+        return { error: 'Task not found — make sure to call listGoalTasks first to get a valid task ID' }
       }
 
-      logger.info('[goal-expert] task updated', { taskId, newTitle })
+      const originalTitle = targetTask.title
+      const taskType = targetTask.task_type
+      const goalId = targetTask.goal_id
+      logger.debug('[FIX] updateTask — task fetched', { taskId, taskType, originalTitle })
 
-      // Calendar sync — best effort, do not fail if calendar update fails
-      if (task.calendar_event_id) {
+      const updates: Record<string, string> = { title: newTitle }
+      if (newDescription) updates.description = newDescription
+
+      // Step 2: Update the task(s)
+      let updatedTasks: { id: string; title: string; calendar_event_id: string | null }[] = []
+
+      if (taskType === 'regular') {
+        // Regular tasks have multiple Ebbinghaus instances — update ALL with the same original title
+        const { data: allUpdated, error: bulkError } = await supabase
+          .from('tasks')
+          .update(updates)
+          .eq('goal_id', goalId)
+          .eq('title', originalTitle)
+          .eq('task_type', 'regular')
+          .select('id, title, calendar_event_id')
+
+        if (bulkError || !allUpdated?.length) {
+          logger.error('[FIX] updateTask bulk update failed', { goalId, originalTitle, error: bulkError?.message })
+          return { error: 'Failed to update task' }
+        }
+
+        updatedTasks = allUpdated
+        logger.info('[FIX] updateTask — updated all regular instances', {
+          goalId,
+          originalTitle,
+          newTitle,
+          count: allUpdated.length,
+        })
+      } else {
+        // Strategic tasks: update just this one
+        const { data: updated, error: updateError } = await supabase
+          .from('tasks')
+          .update(updates)
+          .eq('id', taskId)
+          .select('id, title, calendar_event_id')
+          .single()
+
+        if (updateError || !updated) {
+          logger.error('[FIX] updateTask strategic update failed', { taskId, error: updateError?.message })
+          return { error: 'Failed to update task' }
+        }
+
+        updatedTasks = [updated]
+        logger.info('[FIX] updateTask — updated strategic task', { taskId, newTitle })
+      }
+
+      // Step 3: Calendar sync for ALL updated tasks — best effort
+      const tasksWithEvent = updatedTasks.filter((t) => t.calendar_event_id)
+      let calendarSynced = 0
+
+      if (tasksWithEvent.length > 0) {
         try {
           const { data: userProfile } = await supabase
             .from('users')
@@ -326,26 +376,162 @@ export const updateTask = tool({
 
           const encKey = process.env.TOKEN_ENCRYPTION_KEY
           if (userProfile?.calendar_token_encrypted && encKey) {
-            const accessToken = decryptToken(userProfile.calendar_token_encrypted, encKey)
-            await updateTaskEvent(accessToken, task.calendar_event_id, {
-              title: newTitle,
-              description: newDescription,
+            const { access_token } = JSON.parse(
+              decryptToken(userProfile.calendar_token_encrypted, encKey)
+            ) as OAuthTokens
+
+            for (const task of tasksWithEvent) {
+              try {
+                await updateTaskEvent(access_token, task.calendar_event_id!, {
+                  title: newTitle,
+                  description: newDescription,
+                })
+                calendarSynced++
+                logger.debug('[FIX] updateTask calendar synced', {
+                  taskId: task.id,
+                  calendarEventId: task.calendar_event_id,
+                })
+              } catch (calErr) {
+                logger.warn('[FIX] updateTask calendar sync failed for task', {
+                  taskId: task.id,
+                  error: calErr instanceof Error ? calErr.message : String(calErr),
+                })
+              }
+            }
+
+            logger.info('[FIX] updateTask calendar sync complete', {
+              updatedCount: updatedTasks.length,
+              calendarSynced,
+              calendarTotal: tasksWithEvent.length,
             })
-            logger.info('[goal-expert] calendar event updated for task', { taskId, calendarEventId: task.calendar_event_id })
           } else {
-            logger.debug('[goal-expert] skipping calendar sync — no token or key', { taskId, userId })
+            logger.debug('[FIX] updateTask skipping calendar sync — no token or key', { userId })
           }
         } catch (calErr) {
-          logger.warn('[goal-expert] calendar sync failed for updated task', { taskId, error: calErr instanceof Error ? calErr.message : String(calErr) })
-          // Do not throw — task is updated, calendar is best effort
+          logger.warn('[FIX] updateTask calendar sync error', {
+            error: calErr instanceof Error ? calErr.message : String(calErr),
+          })
         }
       }
 
-      return { taskId: task.id, newTitle: task.title, success: true, calendarSynced: !!task.calendar_event_id }
+      return {
+        taskId,
+        newTitle,
+        updatedCount: updatedTasks.length,
+        success: true,
+        calendarSynced,
+      }
 
     } catch (err) {
-      logger.error('[goal-expert] updateTask error', { taskId, error: err instanceof Error ? err.message : String(err) })
+      logger.error('[FIX] updateTask error', { taskId, error: err instanceof Error ? err.message : String(err) })
       return { error: 'Failed to update task' }
+    }
+  },
+})
+
+// =============================================================
+// Tool 5: listGoalTasks
+// Lists tasks for the goal. Deduplicates Ebbinghaus regular tasks.
+// =============================================================
+
+export const listGoalTasks = tool({
+  description:
+    'List tasks for this goal. Returns task IDs, titles, descriptions, statuses, and scheduled dates. ' +
+    'Always call this before updateTask to get the correct task ID. ' +
+    'Use when the user asks about their tasks, wants to update a task, or wants to discuss specific task wording.',
+  inputSchema: z.object({
+    userId: z.string().describe('The user ID'),
+    goalId: z.string().describe('The goal ID'),
+    filter: z.enum(['active', 'upcoming', 'completed', 'all'])
+      .optional()
+      .default('active')
+      .describe(
+        'active = scheduled (upcoming) + completed in last 14 days (default). ' +
+        'upcoming = only scheduled tasks. ' +
+        'completed = only completed tasks. ' +
+        'all = all non-cancelled tasks.'
+      ),
+  }),
+  execute: async ({ userId, goalId, filter = 'active' }) => {
+    logger.debug('[goal-expert] listGoalTasks called', { userId, goalId, filter })
+    try {
+      const supabase = await createClient()
+      const rows = await getTasksByGoal(supabase, goalId, userId)
+
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - 14)
+      const cutoffStr = cutoff.toISOString().slice(0, 10)
+
+      const filtered = rows.filter((t) => {
+        if (t.status === 'cancelled') return false
+        if (filter === 'all') return true
+        if (filter === 'upcoming') return t.status === 'scheduled'
+        if (filter === 'completed') return t.status === 'completed'
+        // 'active' default: scheduled OR completed within last 14 days
+        if (t.status === 'scheduled') return true
+        if (t.status === 'completed' && t.completed_at && t.completed_at.slice(0, 10) >= cutoffStr) return true
+        return false
+      })
+
+      const strategic = filtered.filter((t) => t.task_type === 'strategic')
+      const regular = filtered.filter((t) => t.task_type === 'regular')
+
+      // Strategic tasks: show each individually (each has a unique deliverable)
+      const strategicItems = strategic.map((t) => ({
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        task_type: 'strategic' as const,
+        status: t.status,
+        scheduled_date: t.scheduled_date,
+        xp_reward: t.xp_reward,
+        duration_minutes: t.duration_minutes,
+      }))
+
+      // Regular tasks: deduplicate by title (Ebbinghaus creates many repeating instances)
+      const regularGroups = new Map<string, typeof regular>()
+      for (const t of regular) {
+        const group = regularGroups.get(t.title) ?? []
+        group.push(t)
+        regularGroups.set(t.title, group)
+      }
+
+      const regularItems = [...regularGroups.entries()].map(([title, group]) => {
+        const upcoming = group
+          .filter((t) => t.status === 'scheduled')
+          .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date))
+        const completed = group.filter((t) => t.status === 'completed')
+        // Use earliest upcoming instance as representative; fall back to most recent completed
+        const representative = upcoming[0] ?? completed[completed.length - 1] ?? group[0]
+        return {
+          id: representative.id,
+          title,
+          description: group.find((t) => t.description)?.description ?? null,
+          task_type: 'regular' as const,
+          status: representative.status,
+          next_scheduled_date: upcoming[0]?.scheduled_date ?? null,
+          upcoming_occurrences: upcoming.length,
+          completed_occurrences: completed.length,
+          total_occurrences: group.length,
+        }
+      })
+
+      const tasks = [...strategicItems, ...regularItems]
+      logger.info('[goal-expert] listGoalTasks result', {
+        goalId,
+        filter,
+        strategicCount: strategicItems.length,
+        regularUniqueCount: regularItems.length,
+        rawRegularCount: regular.length,
+      })
+      return { tasks, count: tasks.length }
+
+    } catch (err) {
+      logger.error('[goal-expert] listGoalTasks error', {
+        goalId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return { tasks: [], error: 'Failed to list tasks' }
     }
   },
 })

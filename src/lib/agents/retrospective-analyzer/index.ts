@@ -69,7 +69,7 @@ export async function runRetrospectiveAnalyzer(input: AnalyzerInput): Promise<An
       system: RETROSPECTIVE_ANALYZER_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: userContext }],
       tools,
-      maxSteps: 5,
+      stopWhen: ({ steps }) => steps.length >= 5,
       onStepFinish: ({ toolResults }) => {
         if (!toolResults) return
 

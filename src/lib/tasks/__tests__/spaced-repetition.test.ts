@@ -126,3 +126,96 @@ describe('generateGoalPlan — fatigueType propagation', () => {
     }
   })
 })
+
+// ─── Task title propagation ────────────────────────────────────────────────────
+
+describe('generateGoalPlan — task title propagation', () => {
+  it('uses regularTaskTitle for regular tasks when provided', () => {
+    const result = generateGoalPlan({
+      goalType: 'skill',
+      startDate: '2026-01-01',
+      quests: [makeQuest({
+        title: 'Quest Key Result',
+        regularTaskTitle: 'Practice Sonic pen spin — 10 reps at desk',
+      })],
+      tasksPerQuest: [{ regular: 1, strategic: 0 }],
+      existingDailyFatigue: [],
+    })
+
+    const regularTasks = result.tasks.filter(t => t.taskType === 'regular')
+    expect(regularTasks.length).toBeGreaterThan(0)
+    for (const task of regularTasks) {
+      expect(task.title).toBe('Practice Sonic pen spin — 10 reps at desk')
+    }
+  })
+
+  it('falls back to quest.title for regular tasks when regularTaskTitle is absent', () => {
+    const result = generateGoalPlan({
+      goalType: 'skill',
+      startDate: '2026-01-01',
+      quests: [makeQuest({ title: 'Quest Key Result' })],
+      tasksPerQuest: [{ regular: 1, strategic: 0 }],
+      existingDailyFatigue: [],
+    })
+
+    const regularTasks = result.tasks.filter(t => t.taskType === 'regular')
+    expect(regularTasks.length).toBeGreaterThan(0)
+    for (const task of regularTasks) {
+      expect(task.title).toBe('Quest Key Result')
+    }
+  })
+
+  it('uses strategicTaskTitles for strategic tasks when provided', () => {
+    const result = generateGoalPlan({
+      goalType: 'knowledge',
+      startDate: '2026-01-01',
+      quests: [makeQuest({
+        title: 'Quest Key Result',
+        strategicTaskTitles: [
+          'Research Sonic technique → summary note',
+          'Record practice video → review in notes',
+        ],
+      })],
+      tasksPerQuest: [{ regular: 0, strategic: 2 }],
+      existingDailyFatigue: [],
+    })
+
+    const strategicTasks = result.tasks.filter(t => t.taskType === 'strategic')
+    expect(strategicTasks).toHaveLength(2)
+    expect(strategicTasks[0]?.title).toBe('Research Sonic technique → summary note')
+    expect(strategicTasks[1]?.title).toBe('Record practice video → review in notes')
+  })
+
+  it('falls back to generated title for strategic tasks when strategicTaskTitles is absent', () => {
+    const result = generateGoalPlan({
+      goalType: 'knowledge',
+      startDate: '2026-01-01',
+      quests: [makeQuest({ title: 'Quest Key Result' })],
+      tasksPerQuest: [{ regular: 0, strategic: 2 }],
+      existingDailyFatigue: [],
+    })
+
+    const strategicTasks = result.tasks.filter(t => t.taskType === 'strategic')
+    expect(strategicTasks).toHaveLength(2)
+    expect(strategicTasks[0]?.title).toBe('Quest Key Result — Strategic Session 1')
+    expect(strategicTasks[1]?.title).toBe('Quest Key Result — Strategic Session 2')
+  })
+
+  it('falls back to generated title for index beyond strategicTaskTitles length', () => {
+    const result = generateGoalPlan({
+      goalType: 'knowledge',
+      startDate: '2026-01-01',
+      quests: [makeQuest({
+        title: 'Quest Key Result',
+        strategicTaskTitles: ['First specific title'],  // only 1 title for 2 sessions
+      })],
+      tasksPerQuest: [{ regular: 0, strategic: 2 }],
+      existingDailyFatigue: [],
+    })
+
+    const strategicTasks = result.tasks.filter(t => t.taskType === 'strategic')
+    expect(strategicTasks).toHaveLength(2)
+    expect(strategicTasks[0]?.title).toBe('First specific title')
+    expect(strategicTasks[1]?.title).toBe('Quest Key Result — Strategic Session 2')
+  })
+})
