@@ -164,7 +164,7 @@ describe('listGoalTasks.execute', () => {
     ) as { tasks: { id: string }[]; count: number }
 
     expect(result.tasks).toHaveLength(1)
-    expect(result.tasks[0].id).toBe('t1')
+    expect(result.tasks[0]!.id).toBe('t1')
   })
 
   it('filter: completed — returns only completed tasks', async () => {
@@ -181,7 +181,7 @@ describe('listGoalTasks.execute', () => {
     ) as { tasks: { id: string }[]; count: number }
 
     expect(result.tasks).toHaveLength(1)
-    expect(result.tasks[0].id).toBe('t2')
+    expect(result.tasks[0]!.id).toBe('t2')
   })
 
   it('filter: all — returns all non-cancelled tasks', async () => {
@@ -231,7 +231,7 @@ describe('listGoalTasks.execute', () => {
     }
 
     expect(result.tasks).toHaveLength(1)
-    const task = result.tasks[0]
+    const task = result.tasks[0]!
     expect(task.title).toBe('Practice Python exercises')
     expect(task.task_type).toBe('regular')
     expect(task.upcoming_occurrences).toBe(3)
