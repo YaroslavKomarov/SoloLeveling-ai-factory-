@@ -297,3 +297,183 @@ describe('listGoalTasks.execute', () => {
     expect(result.error).toBeDefined()
   })
 })
+
+// ============================================================
+// updateTask.execute
+// ============================================================
+
+type UpdateTaskResult = {
+  success?: boolean
+  updatedCount?: number
+  calendarSynced?: number
+  error?: string
+}
+
+/**
+ * Creates a fluent Supabase chain mock.
+ * All intermediary methods (update, eq) return the chain itself.
+ * The terminal method resolves to `value`.
+ */
+function makeFluentChain(terminal: 'single' | 'select', value: unknown) {
+  const chain: Record<string, unknown> = {}
+  for (const m of ['update', 'eq']) {
+    chain[m] = vi.fn().mockReturnValue(chain)
+  }
+  if (terminal === 'select') {
+    chain['select'] = vi.fn().mockResolvedValue(value)
+    chain['single'] = vi.fn()
+  } else {
+    chain['select'] = vi.fn().mockReturnValue(chain)
+    chain['single'] = vi.fn().mockResolvedValue(value)
+  }
+  return chain
+}
+
+describe('updateTask.execute', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUpdateTaskEvent.mockResolvedValue(undefined)
+    mockDecryptToken.mockReturnValue(JSON.stringify({ access_token: 'tok-abc' }))
+    process.env.TOKEN_ENCRYPTION_KEY = 'test-key'
+  })
+
+  it('updates ALL Ebbinghaus instances of a regular task by original title', async () => {
+    const targetTask = { id: 'r1', title: 'Shoulder mobility drill', task_type: 'regular', goal_id: 'goal-1', calendar_event_id: null }
+    const allUpdated = [
+      { id: 'r1', title: 'Shoulder complex (4 sets)', calendar_event_id: null },
+      { id: 'r2', title: 'Shoulder complex (4 sets)', calendar_event_id: null },
+      { id: 'r3', title: 'Shoulder complex (4 sets)', calendar_event_id: null },
+    ]
+
+    const fromMock = vi.fn()
+    fromMock
+      .mockImplementationOnce(() => makeFluentChain('single', { data: targetTask, error: null }))  // tasks: fetch
+      .mockImplementationOnce(() => makeFluentChain('select', { data: allUpdated, error: null }))  // tasks: bulk update
+      .mockImplementationOnce(() => makeFluentChain('single', { data: null, error: null }))         // users: no token
+
+    mockCreateClient.mockResolvedValue({ from: fromMock } as never)
+
+    const result = await updateTask.execute!(
+      { userId: 'user-1', taskId: 'r1', newTitle: 'Shoulder complex (4 sets)' },
+      undefined as never
+    ) as UpdateTaskResult
+
+    expect(result.success).toBe(true)
+    expect(result.updatedCount).toBe(3)
+    expect(result.calendarSynced).toBe(0)
+
+    // Second from() call should be on 'tasks' (the bulk update)
+    expect(fromMock.mock.calls[1]![0]).toBe('tasks')
+  })
+
+  it('syncs ALL calendar events for updated regular task instances', async () => {
+    const targetTask = { id: 'r1', title: 'Shoulder drill', task_type: 'regular', goal_id: 'goal-1', calendar_event_id: 'evt-1' }
+    const allUpdated = [
+      { id: 'r1', title: 'Shoulder complex', calendar_event_id: 'evt-1' },
+      { id: 'r2', title: 'Shoulder complex', calendar_event_id: 'evt-2' },
+      { id: 'r3', title: 'Shoulder complex', calendar_event_id: null },
+    ]
+
+    const fromMock = vi.fn()
+    fromMock
+      .mockImplementationOnce(() => makeFluentChain('single', { data: targetTask, error: null }))
+      .mockImplementationOnce(() => makeFluentChain('select', { data: allUpdated, error: null }))
+      .mockImplementationOnce(() => makeFluentChain('single', { data: { calendar_token_encrypted: 'enc' }, error: null }))
+
+    mockCreateClient.mockResolvedValue({ from: fromMock } as never)
+
+    const result = await updateTask.execute!(
+      { userId: 'user-1', taskId: 'r1', newTitle: 'Shoulder complex', newDescription: 'Step 1. Do it.' },
+      undefined as never
+    ) as UpdateTaskResult
+
+    expect(result.success).toBe(true)
+    expect(result.updatedCount).toBe(3)
+    expect(result.calendarSynced).toBe(2) // only 2 tasks had calendar events
+    expect(mockUpdateTaskEvent).toHaveBeenCalledTimes(2)
+    expect(mockUpdateTaskEvent).toHaveBeenCalledWith('tok-abc', 'evt-1', expect.objectContaining({ title: 'Shoulder complex' }))
+    expect(mockUpdateTaskEvent).toHaveBeenCalledWith('tok-abc', 'evt-2', expect.objectContaining({ title: 'Shoulder complex' }))
+  })
+
+  it('updates only the single strategic task by ID, not siblings', async () => {
+    const targetTask = { id: 's1', title: 'Analyse competitor pricing', task_type: 'strategic', goal_id: 'goal-1', calendar_event_id: null }
+    const updatedTask = { id: 's1', title: 'Analyse competitor pricing → table', calendar_event_id: null }
+
+    const fromMock = vi.fn()
+    fromMock
+      .mockImplementationOnce(() => makeFluentChain('single', { data: targetTask, error: null }))
+      .mockImplementationOnce(() => makeFluentChain('single', { data: updatedTask, error: null }))
+
+    mockCreateClient.mockResolvedValue({ from: fromMock } as never)
+
+    const result = await updateTask.execute!(
+      { userId: 'user-1', taskId: 's1', newTitle: 'Analyse competitor pricing → table' },
+      undefined as never
+    ) as UpdateTaskResult
+
+    expect(result.success).toBe(true)
+    expect(result.updatedCount).toBe(1)
+    // No calendar_event_id → users fetch is skipped entirely: fetch + single update only
+    expect(fromMock).toHaveBeenCalledTimes(2)
+    expect(mockUpdateTaskEvent).not.toHaveBeenCalled()
+  })
+
+  it('returns descriptive error when task ID is not found', async () => {
+    const fromMock = vi.fn()
+    fromMock.mockImplementationOnce(() =>
+      makeFluentChain('single', { data: null, error: { message: 'No rows returned' } })
+    )
+    mockCreateClient.mockResolvedValue({ from: fromMock } as never)
+
+    const result = await updateTask.execute!(
+      { userId: 'user-1', taskId: 'bad-id', newTitle: 'Anything' },
+      undefined as never
+    ) as UpdateTaskResult
+
+    expect(result.error).toMatch(/Task not found/)
+    expect(result.success).toBeUndefined()
+  })
+
+  it('returns error when DB bulk update fails for regular task', async () => {
+    const targetTask = { id: 'r1', title: 'Old title', task_type: 'regular', goal_id: 'goal-1', calendar_event_id: null }
+
+    const fromMock = vi.fn()
+    fromMock
+      .mockImplementationOnce(() => makeFluentChain('single', { data: targetTask, error: null }))
+      .mockImplementationOnce(() => makeFluentChain('select', { data: null, error: { message: 'DB error' } }))
+
+    mockCreateClient.mockResolvedValue({ from: fromMock } as never)
+
+    const result = await updateTask.execute!(
+      { userId: 'user-1', taskId: 'r1', newTitle: 'New title' },
+      undefined as never
+    ) as UpdateTaskResult
+
+    expect(result.error).toBe('Failed to update task')
+    expect(result.success).toBeUndefined()
+  })
+
+  it('skips calendar sync when TOKEN_ENCRYPTION_KEY is not set', async () => {
+    delete process.env.TOKEN_ENCRYPTION_KEY
+
+    const targetTask = { id: 'r1', title: 'Drill', task_type: 'regular', goal_id: 'goal-1', calendar_event_id: 'evt-1' }
+    const allUpdated = [{ id: 'r1', title: 'New Drill', calendar_event_id: 'evt-1' }]
+
+    const fromMock = vi.fn()
+    fromMock
+      .mockImplementationOnce(() => makeFluentChain('single', { data: targetTask, error: null }))
+      .mockImplementationOnce(() => makeFluentChain('select', { data: allUpdated, error: null }))
+      .mockImplementationOnce(() => makeFluentChain('single', { data: { calendar_token_encrypted: 'enc' }, error: null }))
+
+    mockCreateClient.mockResolvedValue({ from: fromMock } as never)
+
+    const result = await updateTask.execute!(
+      { userId: 'user-1', taskId: 'r1', newTitle: 'New Drill' },
+      undefined as never
+    ) as UpdateTaskResult
+
+    expect(result.success).toBe(true)
+    expect(result.calendarSynced).toBe(0)
+    expect(mockUpdateTaskEvent).not.toHaveBeenCalled()
+  })
+})
