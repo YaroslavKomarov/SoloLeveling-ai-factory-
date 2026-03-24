@@ -11,10 +11,12 @@ export interface LevelUpPending {
 
 export interface TasksState {
   todaysTasks: TaskRow[]
+  missedTasks: TaskRow[]
   isLoaded: boolean
   levelUpPending: LevelUpPending | null
 
   setTodaysTasks: (tasks: TaskRow[]) => void
+  setMissedTasks: (tasks: TaskRow[]) => void
   updateTask: (id: string, updates: Partial<TaskRow>) => void
   setLevelUpPending: (level: number, previousLevel: number) => void
   clearLevelUp: () => void
@@ -22,6 +24,7 @@ export interface TasksState {
 
 export const useTasksStore = create<TasksState>((set) => ({
   todaysTasks: [],
+  missedTasks: [],
   isLoaded: false,
   levelUpPending: null,
 
@@ -30,10 +33,18 @@ export const useTasksStore = create<TasksState>((set) => ({
     set({ todaysTasks: tasks, isLoaded: true })
   },
 
+  setMissedTasks: (tasks) => {
+    logger.debug(`Loaded ${tasks.length} missed tasks`)
+    set({ missedTasks: tasks })
+  },
+
   updateTask: (id, updates) => {
     logger.debug(`Task ${id} updated`, updates)
     set((state) => ({
       todaysTasks: state.todaysTasks.map((t) =>
+        t.id === id ? { ...t, ...updates } : t
+      ),
+      missedTasks: state.missedTasks.map((t) =>
         t.id === id ? { ...t, ...updates } : t
       ),
     }))

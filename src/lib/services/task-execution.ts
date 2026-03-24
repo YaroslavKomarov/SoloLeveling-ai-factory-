@@ -30,7 +30,7 @@ export interface CompleteTaskResult {
 export interface SkipTaskResult {
   task: TaskRow
   goalFailed: boolean
-  failureReason: 'consecutive_skips' | 'skip_rate' | null
+  failureReason: string | null
 }
 
 function getTodayUTC(): string {
@@ -68,15 +68,16 @@ export async function completeTask(
     throw Object.assign(new Error('Forbidden: task does not belong to user'), { code: 403 })
   }
 
-  if (task.status !== 'scheduled') {
+  if (task.status !== 'scheduled' && task.status !== 'missed') {
     logger.warn('Task already completed/skipped', { taskId, status: task.status })
     throw Object.assign(new Error(`Task already ${task.status}`), { code: 409 })
   }
 
-  // Step 2: Enforce scheduled_date === today (UTC)
+  // Step 2: Enforce scheduled_date === today for scheduled tasks.
+  // Missed tasks (catch-up completions) bypass this check — they are from past dates.
   const today = getTodayUTC()
-  logger.debug('Step 2: Verifying task date', { taskScheduledDate: task.scheduled_date, today })
-  if (task.scheduled_date !== today) {
+  logger.debug('Step 2: Verifying task date', { taskScheduledDate: task.scheduled_date, today, status: task.status })
+  if (task.status === 'scheduled' && task.scheduled_date !== today) {
     logger.warn('Task is not scheduled for today', { taskId, scheduledDate: task.scheduled_date, today })
     throw Object.assign(new Error('Task is not scheduled for today'), { code: 422 })
   }
@@ -149,6 +150,17 @@ export async function completeTask(
   const statusStart = Date.now()
   const completedTask = await updateTaskStatus(supabase, taskId, 'completed', new Date())
   logger.debug('Task status updated', { taskId, duration: `${Date.now() - statusStart}ms` })
+
+  // Reset consecutive_skips streak on successful completion
+  const { error: resetSkipError } = await supabase
+    .from('tasks')
+    .update({ consecutive_skips: 0 })
+    .eq('id', taskId)
+  if (resetSkipError) {
+    logger.warn('Failed to reset consecutive_skips', { taskId, error: resetSkipError.message })
+  } else {
+    logger.debug('consecutive_skips reset to 0', { taskId })
+  }
 
   // Step 9: If note, save completion_note
   let finalTask = completedTask
@@ -298,37 +310,41 @@ export async function skipTask(
   })
 
   // Step 6: Check goal failure conditions (only for regular tasks)
+  // Failure condition: 3+ skipped/missed instances of the same task (title + goal_id) out of 7 repetitions
   let goalFailed = false
-  let failureReason: 'consecutive_skips' | 'skip_rate' | null = null
+  let failureReason: string | null = null
 
   if (task.task_type === 'regular') {
-    const updatedTotalOccurrences = (task.total_occurrences ?? 1) + 1
-    const skipRate = newTotalSkips / updatedTotalOccurrences
+    const { count, error: countError } = await supabase
+      .from('tasks')
+      .select('id', { count: 'exact', head: true })
+      .eq('goal_id', task.goal_id)
+      .eq('title', task.title)
+      .in('status', ['skipped', 'missed'])
 
-    logger.debug('Step 6: Checking goal failure conditions', {
-      taskId,
-      consecutiveSkips: newConsecutiveSkips,
-      skipRate: `${(skipRate * 100).toFixed(1)}%`,
-      totalSkips: newTotalSkips,
-      totalOccurrences: updatedTotalOccurrences,
-    })
+    if (countError) {
+      logger.error('Step 6: Failed to count sibling skip stats', { taskId, error: countError.message })
+    } else {
+      const totalMissed = count ?? 0
+      logger.debug('Step 6: skip threshold check', { taskId, goalId: task.goal_id, totalMissed })
 
-    if (newConsecutiveSkips >= 3) {
-      goalFailed = true
-      failureReason = 'consecutive_skips'
-      logger.warn(`Goal failure triggered: consecutive_skips >= 3`, {
-        taskId,
-        goalId: task.goal_id,
-        consecutiveSkips: newConsecutiveSkips,
-      })
-    } else if (skipRate >= 0.20) {
-      goalFailed = true
-      failureReason = 'skip_rate'
-      logger.warn(`Goal failure triggered: skip rate >= 20%`, {
-        taskId,
-        goalId: task.goal_id,
-        skipRate: `${(skipRate * 100).toFixed(1)}%`,
-      })
+      if (totalMissed >= 3) {
+        goalFailed = true
+        failureReason = `skip_threshold:${task.title}`
+        logger.warn('Goal failure: skip threshold reached', { goalId: task.goal_id, totalMissed })
+      } else if (totalMissed === 2) {
+        // Mark at-risk — next skip will fail the goal
+        const { error: atRiskError } = await supabase
+          .from('goals')
+          .update({ is_at_risk: true })
+          .eq('id', task.goal_id)
+          .eq('status', 'active')
+        if (atRiskError) {
+          logger.error('Failed to mark goal at-risk', { goalId: task.goal_id, error: atRiskError.message })
+        } else {
+          logger.info('Goal marked at-risk (2 skips)', { goalId: task.goal_id, taskTitle: task.title })
+        }
+      }
     }
   } else {
     logger.debug('Step 6: Skipping goal failure check (strategic task)', { taskId })

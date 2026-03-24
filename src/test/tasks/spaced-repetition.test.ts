@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   getRegularTaskDates,
-  getStrategicTaskDates,
   generateGoalPlan,
 } from '@/lib/tasks/spaced-repetition'
+import type { QuestMilestoneDraft } from '@/lib/supabase/types'
 
 const START = '2026-02-18'
 
@@ -11,6 +11,17 @@ function addDays(iso: string, days: number): string {
   const d = new Date(iso)
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
+}
+
+function makeMilestone(overrides: Partial<QuestMilestoneDraft> = {}): QuestMilestoneDraft {
+  return {
+    title: 'Test Milestone',
+    strategicTaskTitles: ['Study the concept → write notes'],
+    strategicTaskDescriptions: ['1. Open resource. 2. Read. 3. Write notes.'],
+    regularTaskTitle: 'Practice the skill on training platform (10 min)',
+    regularTaskDescription: '1. Open platform. 2. Complete exercise.',
+    ...overrides,
+  }
 }
 
 // =============================================================
@@ -45,93 +56,78 @@ describe('getRegularTaskDates', () => {
 })
 
 // =============================================================
-// getStrategicTaskDates
-// =============================================================
-describe('getStrategicTaskDates', () => {
-  it('5 strategic tasks → evenly spaced across 90 days', () => {
-    const dates = getStrategicTaskDates(START, 5)
-    expect(dates).toHaveLength(5)
-    // First date should be start or near start, last should be near end
-    expect(dates[0]).toBe(START)
-    expect(dates[4]).toBe(addDays(START, 89))
-  })
-
-  it('1 strategic task → placed at midpoint (day 45)', () => {
-    const dates = getStrategicTaskDates(START, 1)
-    expect(dates).toHaveLength(1)
-    expect(dates[0]).toBe(addDays(START, 44))  // day 45 = offset 44
-  })
-
-  it('0 tasks → returns empty array', () => {
-    expect(getStrategicTaskDates(START, 0)).toEqual([])
-  })
-
-  it('2 strategic tasks → first at day 0, last at day 89', () => {
-    const dates = getStrategicTaskDates(START, 2)
-    expect(dates).toHaveLength(2)
-    expect(dates[0]).toBe(START)
-    expect(dates[1]).toBe(addDays(START, 89))
-  })
-})
-
-// =============================================================
 // generateGoalPlan
 // =============================================================
 describe('generateGoalPlan', () => {
   const baseQuests = [
-    { title: 'Practice exercises', targetValue: 30, unit: 'exercises', orderIndex: 0 },
-    { title: 'Complete projects', targetValue: 3, unit: 'projects', orderIndex: 1 },
+    {
+      title: 'Practice exercises',
+      targetValue: 30,
+      unit: 'exercises',
+      orderIndex: 0,
+      milestones: [
+        makeMilestone({ title: 'Basics' }),
+        makeMilestone({ title: 'Advanced', strategicTaskTitles: ['Learn advanced → notes'], strategicTaskDescriptions: ['Steps.'], regularTaskTitle: 'Advanced practice on platform (10 min)', regularTaskDescription: 'Practice.' }),
+      ],
+    },
+    {
+      title: 'Complete projects',
+      targetValue: 3,
+      unit: 'projects',
+      orderIndex: 1,
+      milestones: [
+        makeMilestone({ title: 'Project planning', strategicTaskTitles: ['Plan project → outline in notes'], strategicTaskDescriptions: ['Steps.'] }),
+      ],
+    },
   ]
 
-  it('skill-based goal: generates more regular than strategic tasks', () => {
+  it('skill-based goal: generates regular tasks from milestones', () => {
     const result = generateGoalPlan({
       goalType: 'skill',
       startDate: START,
       quests: baseQuests,
-      tasksPerQuest: [
-        { regular: 4, strategic: 1 },
-        { regular: 3, strategic: 1 },
-      ],
       existingDailyFatigue: [],
     })
 
     const regular = result.tasks.filter(t => t.taskType === 'regular').length
-    const strategic = result.tasks.filter(t => t.taskType === 'strategic').length
-    expect(regular).toBeGreaterThan(strategic)
+    expect(regular).toBeGreaterThan(0)
   })
 
-  it('knowledge-based goal: generates more strategic than regular tasks', () => {
+  it('knowledge-based goal with strategic-only milestones: no regular tasks', () => {
     const result = generateGoalPlan({
       goalType: 'knowledge',
       startDate: START,
-      quests: baseQuests,
-      tasksPerQuest: [
-        { regular: 0, strategic: 5 },
-        { regular: 0, strategic: 4 },
+      quests: [
+        {
+          title: 'Research goal',
+          targetValue: 5,
+          unit: 'topics',
+          orderIndex: 0,
+          milestones: [
+            makeMilestone({ strategicTaskTitles: ['Research topic A → summary'], strategicTaskDescriptions: ['Steps.'], regularTaskTitle: '', regularTaskDescription: '' }),
+            makeMilestone({ title: 'M2', strategicTaskTitles: ['Research topic B → summary'], strategicTaskDescriptions: ['Steps.'], regularTaskTitle: '', regularTaskDescription: '' }),
+          ],
+        },
       ],
       existingDailyFatigue: [],
     })
 
     const regular = result.tasks.filter(t => t.taskType === 'regular').length
-    const strategic = result.tasks.filter(t => t.taskType === 'strategic').length
-    expect(strategic).toBeGreaterThan(regular)
+    expect(regular).toBe(0)
   })
 
   it('no load violations for a reasonable 1-goal plan', () => {
     const result = generateGoalPlan({
       goalType: 'skill',
       startDate: START,
-      quests: [{ title: 'Practice', targetValue: 20, unit: 'sessions', orderIndex: 0 }],
-      tasksPerQuest: [{ regular: 2, strategic: 1 }],
+      quests: [{ title: 'Practice', targetValue: 20, unit: 'sessions', orderIndex: 0, milestones: [makeMilestone()] }],
       existingDailyFatigue: [],
     })
 
-    // A modest plan should not violate 100% fatigue limit
     expect(result.loadViolationDays).toHaveLength(0)
   })
 
   it('detects load violations when existing fatigue is high', () => {
-    // Pre-fill all days with 95% intellectual fatigue
     const existingFatigue = Array.from({ length: 90 }, (_, i) => ({
       date: addDays(START, i),
       physical: 0,
@@ -143,12 +139,20 @@ describe('generateGoalPlan', () => {
     const result = generateGoalPlan({
       goalType: 'skill',
       startDate: START,
-      quests: [{ title: 'Practice', targetValue: 20, unit: 'sessions', orderIndex: 0 }],
-      tasksPerQuest: [{ regular: 3, strategic: 2 }],
+      quests: [{
+        title: 'Practice',
+        targetValue: 20,
+        unit: 'sessions',
+        orderIndex: 0,
+        milestones: [
+          makeMilestone({ title: 'M1' }),
+          makeMilestone({ title: 'M2', strategicTaskTitles: ['Learn advanced → notes'], strategicTaskDescriptions: ['Steps.'] }),
+          makeMilestone({ title: 'M3', strategicTaskTitles: ['Master topic → notes'], strategicTaskDescriptions: ['Steps.'] }),
+        ],
+      }],
       existingDailyFatigue: existingFatigue,
     })
 
-    // Adding tasks on top of 95% should push some days over 100%
     expect(result.loadViolationDays.length).toBeGreaterThan(0)
   })
 
@@ -156,8 +160,20 @@ describe('generateGoalPlan', () => {
     const result = generateGoalPlan({
       goalType: 'skill',
       startDate: START,
-      quests: [{ title: 'Practice', targetValue: 10, unit: 'sessions', orderIndex: 0 }],
-      tasksPerQuest: [{ regular: 2, strategic: 1 }],
+      quests: [{
+        title: 'Practice',
+        targetValue: 10,
+        unit: 'sessions',
+        orderIndex: 0,
+        milestones: [
+          makeMilestone({
+            strategicTaskTitles: ['Study topic → notes'],
+            strategicTaskDescriptions: ['Steps.'],
+            regularTaskTitle: 'Practice on platform (10 min)',
+            regularTaskDescription: 'Practice steps.',
+          }),
+        ],
+      }],
       existingDailyFatigue: [],
     })
 
@@ -174,14 +190,42 @@ describe('generateGoalPlan', () => {
       goalType: 'knowledge',
       startDate: START,
       quests: baseQuests,
-      tasksPerQuest: [
-        { regular: 2, strategic: 3 },
-        { regular: 1, strategic: 2 },
-      ],
       existingDailyFatigue: [],
     })
 
     const endDate = addDays(START, 89)
     expect(result.tasks.every(t => t.scheduledDate >= START && t.scheduledDate <= endDate)).toBe(true)
+  })
+
+  it('regular task first occurrence is after its milestone strategic task', () => {
+    const result = generateGoalPlan({
+      goalType: 'skill',
+      startDate: START,
+      quests: [{
+        title: 'Learn pen spinning',
+        targetValue: 3,
+        unit: 'tricks',
+        orderIndex: 0,
+        milestones: [
+          makeMilestone({
+            title: 'Learn Sonic',
+            strategicTaskTitles: ['Watch Sonic tutorial on YouTube at 0.5x → note wrist technique'],
+            strategicTaskDescriptions: ['1. Watch. 2. Note.'],
+            regularTaskTitle: 'Practice Sonic — 10 attempts at home bar (10 min)',
+            regularTaskDescription: '1. Attempt 10 times.',
+          }),
+        ],
+      }],
+      existingDailyFatigue: [],
+    })
+
+    const strategic = result.tasks.find(t => t.taskType === 'strategic')!
+    const firstRegular = result.tasks
+      .filter(t => t.taskType === 'regular')
+      .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate))[0]!
+
+    expect(strategic).toBeDefined()
+    expect(firstRegular).toBeDefined()
+    expect(firstRegular.scheduledDate > strategic.scheduledDate).toBe(true)
   })
 })

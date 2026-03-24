@@ -165,7 +165,7 @@ export type QuestUpdate = Partial<Omit<QuestRow, 'id' | 'goal_id' | 'user_id' | 
 // --- Tasks ---
 
 export type TaskType = 'regular' | 'strategic'
-export type TaskStatus = 'scheduled' | 'completed' | 'skipped' | 'cancelled'
+export type TaskStatus = 'scheduled' | 'completed' | 'skipped' | 'cancelled' | 'missed'
 export type FatigueType = 'physical' | 'emotional' | 'intellectual'
 
 export interface TaskRow {
@@ -300,6 +300,19 @@ export type GoalChatMessageInsert = Omit<GoalChatMessageRow, 'id' | 'created_at'
 
 // --- Domain types (not DB rows — for agent/UI use) ---
 
+/**
+ * A single learning milestone within a quest.
+ * Milestones are sequential: theory phase (strategic tasks) → practice phase (regular task).
+ * This is a prompting concept only — no DB entity exists for milestones.
+ */
+export interface QuestMilestoneDraft {
+  title: string                        // e.g. "Master Python lists"
+  strategicTaskTitles: string[]        // 1+ theory/context tasks (must have at least one)
+  strategicTaskDescriptions: string[]  // same length as strategicTaskTitles
+  regularTaskTitle: string             // empty string if no practice task for this milestone
+  regularTaskDescription: string       // empty string if no practice task
+}
+
 /** Generated quest draft before DB insert */
 export interface QuestDraft {
   title: string
@@ -307,10 +320,7 @@ export interface QuestDraft {
   unit: string
   orderIndex: number
   fatigueType?: FatigueType  // which fatigue bar tasks in this quest affect
-  regularTaskTitle?: string           // specific repeatable task title from agent (e.g. "Practice Sonic pen spin — 10 reps")
-  regularTaskDescription?: string     // step-by-step guidance for the repeating regular task
-  strategicTaskTitles?: string[]      // per-session strategic task titles from agent (same order as descriptions)
-  strategicTaskDescriptions?: string[]  // per-session guidance for each strategic task (same order as strategic task titles)
+  milestones: QuestMilestoneDraft[]    // sequential learning milestones; at least one required
 }
 
 /** One entry in the 90-day task plan (pre-insert) */

@@ -170,6 +170,100 @@ export async function getTasksByGoal(supabase: DB, goalId: string, userId: strin
   return data
 }
 
+/**
+ * Fetch tasks with status='missed' from the last windowDays days, for active goals only.
+ * Used to populate the "Missed Tasks" section on the TODAY page.
+ */
+export async function getMissedTasks(
+  supabase: DB,
+  userId: string,
+  windowDays = 14
+): Promise<TaskRow[]> {
+  const windowStart = new Date(Date.now() - windowDays * 86400000).toISOString().slice(0, 10)
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+
+  logger.debug('getMissedTasks', { userId, windowStart, yesterday, windowDays })
+
+  // Step 1: Get active goal IDs — missed tasks from completed/failed goals are excluded
+  const { data: activeGoals, error: goalsError } = await supabase
+    .from('goals')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+
+  if (goalsError) {
+    logger.error('getMissedTasks: goals fetch failed', { userId, error: goalsError.message })
+    throw new Error(`getMissedTasks: ${goalsError.message}`)
+  }
+
+  const activeGoalIds = (activeGoals ?? []).map((g) => g.id)
+  if (activeGoalIds.length === 0) {
+    logger.debug('getMissedTasks: no active goals', { userId })
+    return []
+  }
+
+  // Step 2: Get missed tasks in active goals within window
+  const { data, error } = await supabase
+    .from('tasks')
+    .select()
+    .eq('user_id', userId)
+    .eq('status', 'missed')
+    .gte('scheduled_date', windowStart)
+    .lte('scheduled_date', yesterday)
+    .in('goal_id', activeGoalIds)
+    .order('scheduled_date', { ascending: true })
+
+  if (error) {
+    logger.error('getMissedTasks failed', { userId, error: error.message })
+    throw new Error(`getMissedTasks: ${error.message}`)
+  }
+
+  logger.debug('getMissedTasks result', { userId, count: data.length })
+  return data
+}
+
+/**
+ * For a set of goal IDs, returns per-regular-task completion and skip stats.
+ * Key: `${goalId}:${title}`, Value: { completed, total, skipped }
+ * total includes all non-cancelled regular task instances (up to 7 per Ebbinghaus chain).
+ */
+export async function getRegularTaskSkipStats(
+  supabase: DB,
+  userId: string,
+  goalIds: string[]
+): Promise<Map<string, { completed: number; total: number; skipped: number }>> {
+  if (goalIds.length === 0) return new Map()
+
+  logger.debug('getRegularTaskSkipStats', { userId, goalCount: goalIds.length })
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('goal_id, title, status')
+    .eq('user_id', userId)
+    .in('goal_id', goalIds)
+    .eq('task_type', 'regular')
+    .neq('status', 'cancelled')
+
+  if (error) {
+    logger.error('getRegularTaskSkipStats failed', { userId, error: error.message })
+    throw new Error(`getRegularTaskSkipStats: ${error.message}`)
+  }
+
+  const statsMap = new Map<string, { completed: number; total: number; skipped: number }>()
+  for (const row of data) {
+    if (!row.goal_id || !row.title) continue
+    const key = `${row.goal_id}:${row.title}`
+    const entry = statsMap.get(key) ?? { completed: 0, total: 0, skipped: 0 }
+    entry.total++
+    if (row.status === 'completed') entry.completed++
+    if (row.status === 'skipped' || row.status === 'missed') entry.skipped++
+    statsMap.set(key, entry)
+  }
+
+  logger.debug('getRegularTaskSkipStats result', { userId, statsMapSize: statsMap.size })
+  return statsMap
+}
+
 export async function updateTaskStatus(
   supabase: DB,
   id: string,

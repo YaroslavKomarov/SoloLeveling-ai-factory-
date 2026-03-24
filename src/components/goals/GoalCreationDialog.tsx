@@ -226,36 +226,32 @@ export function GoalCreationDialog() {
       }
 
       if (r.phase === 'planning' && Array.isArray(r.quests)) {
-        // Convert agent quests to QuestDraft format
+        // Convert agent quests (milestone-based schema) to QuestDraft format
         const drafts: QuestDraft[] = (r.quests as Array<{
           title: string
           targetValue: number
           unit: string
-          regularTaskCount: number
-          strategicTaskCount: number
           fatigueType?: 'physical' | 'emotional' | 'intellectual'
-          regularTaskTitle?: string
-          regularTaskDescription?: string
-          strategicTaskTitles?: string[]
-          strategicTaskDescriptions?: string[]
+          milestones?: Array<{
+            title: string
+            strategicTaskTitles: string[]
+            strategicTaskDescriptions: string[]
+            regularTaskTitle: string
+            regularTaskDescription: string
+          }>
         }>).map((q, i) => ({
           title: q.title,
           targetValue: q.targetValue,
           unit: q.unit,
           orderIndex: i,
           fatigueType: q.fatigueType,
-          regularTaskTitle: q.regularTaskTitle,
-          regularTaskDescription: q.regularTaskDescription,
-          strategicTaskTitles: q.strategicTaskTitles,
-          strategicTaskDescriptions: q.strategicTaskDescriptions,
-        }))
-
-        const agentTaskCounts = (r.quests as Array<{
-          regularTaskCount: number
-          strategicTaskCount: number
-        }>).map(q => ({
-          regular: q.regularTaskCount,
-          strategic: q.strategicTaskCount,
+          milestones: (q.milestones ?? []).map(m => ({
+            title: m.title,
+            strategicTaskTitles: m.strategicTaskTitles ?? [],
+            strategicTaskDescriptions: m.strategicTaskDescriptions ?? [],
+            regularTaskTitle: m.regularTaskTitle ?? '',
+            regularTaskDescription: m.regularTaskDescription ?? '',
+          })),
         }))
 
         setDraftQuests(drafts)
@@ -266,19 +262,21 @@ export function GoalCreationDialog() {
           setDraftGoalTitle(r.goalTitle as string)
         }
 
-        // Generate 90-day plan
+        // Generate 90-day plan (milestone-aware — no separate tasksPerQuest needed)
         const today = new Date().toISOString().slice(0, 10)
-        console.log('[FIX] calling generateGoalPlan', { questCount: drafts.length, agentTaskCounts })
+        logger.debug('[GoalCreationDialog] calling generateGoalPlan', {
+          questCount: drafts.length,
+          milestonesPerQuest: drafts.map(q => q.milestones.length),
+        })
         const planResult = generateGoalPlan({
           goalType: draftGoalType ?? 'skill',
           startDate: today,
           quests: drafts,
-          tasksPerQuest: agentTaskCounts,
           existingDailyFatigue: [],
         })
 
         setPlanResult(planResult)
-        console.log('[FIX] phase → preview', { taskCount: planResult.tasks.length })
+        logger.debug('[GoalCreationDialog] phase → preview', { taskCount: planResult.tasks.length })
         setPhase('preview')
       }
       if (r.phase === 'synthesis' && r.title && r.content) {

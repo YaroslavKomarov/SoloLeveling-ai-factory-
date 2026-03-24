@@ -5,8 +5,7 @@
  */
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getTasksByDate } from '@/lib/supabase/tasks'
-import { getDailyFatigue } from '@/lib/supabase/tasks'
+import { getTasksByDate, getDailyFatigue, getMissedTasks, getRegularTaskSkipStats } from '@/lib/supabase/tasks'
 import { getGoalsByUser, getFailedUnacknowledgedGoals } from '@/lib/supabase/goals'
 import { TodayTaskList } from '@/components/tasks/TodayTaskList'
 import { createLogger } from '@/lib/logger'
@@ -28,18 +27,23 @@ export default async function TodayPage() {
   const today = getTodayUTC()
   logger.debug(`Fetching tasks for userId=${user.id}, date=${today}`)
 
-  const [tasks, fatigue, goals, failedGoals] = await Promise.all([
+  const [tasks, fatigue, goals, failedGoals, missedTasks] = await Promise.all([
     getTasksByDate(supabase, user.id, today),
     getDailyFatigue(supabase, user.id, today),
     getGoalsByUser(supabase, user.id, 'active'),
     getFailedUnacknowledgedGoals(supabase, user.id),
+    getMissedTasks(supabase, user.id),
   ])
 
   // Fetch active goals that are at risk
   const atRiskGoals = goals.filter((g) => g.is_at_risk)
 
+  // Fetch per-regular-task skip stats for N/7 display and at-risk warnings
+  const regularTaskStats = await getRegularTaskSkipStats(supabase, user.id, goals.map((g) => g.id))
+
   logger.debug('TodayPage data fetched', {
     taskCount: tasks.length,
+    missedTasks: missedTasks.length,
     fatigue: fatigue
       ? { physical: fatigue.physical, emotional: fatigue.emotional, intellectual: fatigue.intellectual }
       : 'none (first visit today)',
@@ -57,10 +61,12 @@ export default async function TodayPage() {
   return (
     <TodayTaskList
       tasks={tasks}
+      missedTasks={missedTasks}
       fatigue={initialFatigue}
       goals={goals}
       failedGoals={failedGoals}
       atRiskGoals={atRiskGoals}
+      regularTaskStats={regularTaskStats}
     />
   )
 }

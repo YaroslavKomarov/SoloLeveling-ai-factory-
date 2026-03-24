@@ -15,6 +15,10 @@ describe('GOAL_GENERATOR_SYSTEM_PROMPT — template literal integrity', () => {
     expect(GOAL_GENERATOR_SYSTEM_PROMPT.length).toBeGreaterThan(500)
   })
 
+  it('contains milestone concept section', () => {
+    expect(GOAL_GENERATOR_SYSTEM_PROMPT).toContain('Quest Milestones')
+  })
+
   it('contains regularTaskDescription field reference', () => {
     expect(GOAL_GENERATOR_SYSTEM_PROMPT).toContain('regularTaskDescription')
   })
@@ -48,26 +52,26 @@ describe('GOAL_GENERATOR_SYSTEM_PROMPT — Task Formulation Rules', () => {
   })
 })
 
-describe('generateQuests schema — task title constraints', () => {
-  const questSchema = generateQuestsSchema.shape.quests.element
+describe('generateQuests schema — milestone task title constraints', () => {
+  const milestoneSchema = generateQuestsSchema.shape.quests.element.shape.milestones.element
 
-  it('regularTaskTitle has minLength constraint (≥ 10 chars)', () => {
-    const result = questSchema.shape.regularTaskTitle.safeParse('Too short')
-    expect(result.success).toBe(false)
+  it('regularTaskTitle field exists on milestone schema', () => {
+    // regularTaskTitle is now inside milestones, not directly on quest
+    expect(milestoneSchema.shape.regularTaskTitle).toBeDefined()
   })
 
   it('regularTaskTitle accepts a valid specific title', () => {
-    const result = questSchema.shape.regularTaskTitle.safeParse('Complete freeCodeCamp JS array methods exercises')
+    const result = milestoneSchema.shape.regularTaskTitle.safeParse('Complete freeCodeCamp JS array methods exercises')
     expect(result.success).toBe(true)
   })
 
   it('strategicTaskTitles items have minLength constraint (≥ 15 chars)', () => {
-    const result = questSchema.shape.strategicTaskTitles.safeParse(['Too short'])
+    const result = milestoneSchema.shape.strategicTaskTitles.safeParse(['Too short'])
     expect(result.success).toBe(false)
   })
 
   it('strategicTaskTitles accepts valid specific titles', () => {
-    const result = questSchema.shape.strategicTaskTitles.safeParse([
+    const result = milestoneSchema.shape.strategicTaskTitles.safeParse([
       'Analyse competitor pricing data → comparison table in notes',
       'Write chapter 3 outline → 500-word draft saved as note',
     ])
@@ -75,7 +79,26 @@ describe('generateQuests schema — task title constraints', () => {
   })
 
   it('strategicTaskTitles rejects empty string items', () => {
-    const result = questSchema.shape.strategicTaskTitles.safeParse([''])
+    const result = milestoneSchema.shape.strategicTaskTitles.safeParse([''])
     expect(result.success).toBe(false)
+  })
+
+  it('milestones array requires at least 1 milestone per quest', () => {
+    const milestonesField = generateQuestsSchema.shape.quests.element.shape.milestones
+    const result = milestonesField.safeParse([])
+    expect(result.success).toBe(false)
+  })
+
+  it('milestones array allows up to 4 milestones per quest', () => {
+    const milestonesField = generateQuestsSchema.shape.quests.element.shape.milestones
+    const validMilestone = {
+      title: 'Valid Milestone Title',
+      strategicTaskTitles: ['Valid strategic task title — at least 15 chars'],
+      strategicTaskDescriptions: ['Steps.'],
+      regularTaskTitle: '',
+      regularTaskDescription: '',
+    }
+    const result = milestonesField.safeParse([validMilestone, validMilestone, validMilestone, validMilestone])
+    expect(result.success).toBe(true)
   })
 })

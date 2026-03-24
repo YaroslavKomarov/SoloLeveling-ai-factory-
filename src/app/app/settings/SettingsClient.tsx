@@ -62,6 +62,7 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
   const [isPendingRetro, startRetro] = useTransition()
   const [profileMsg, setProfileMsg] = useState<string | null>(null)
   const [retroMsg, setRetroMsg] = useState<string | null>(null)
+  const [activityWindowError, setActivityWindowError] = useState<string | null>(null)
   const [calendarConnected, setCalendarConnected] = useState(!!initialProfile.calendar_connected_at)
 
   const profileForm = useForm({
@@ -83,6 +84,30 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
   const handleProfileSave = profileForm.handleSubmit((data) => {
     logger.debug('profile section save', { displayName: data.displayName })
     setProfileMsg(null)
+    setActivityWindowError(null)
+
+    // Client-side activity window validation
+    const start = data.activityWindowStart
+    const end = data.activityWindowEnd
+    const [sh, sm] = start.split(':').map(Number)
+    const [eh, em] = end.split(':').map(Number)
+    const startMinutes = sh * 60 + sm
+    const endMinutes = eh * 60 + em
+    const duration = endMinutes - startMinutes
+
+    if (duration <= 0) {
+      setActivityWindowError('End time must be after start time')
+      return
+    }
+    if (duration > 12 * 60) {
+      setActivityWindowError('Activity window cannot exceed 12 hours')
+      return
+    }
+    if (eh > 23 || (eh === 23 && em > 59)) {
+      setActivityWindowError('End time cannot be past midnight (23:59)')
+      return
+    }
+
     startProfile(async () => {
       const result = await updateProfileSettings({
         displayName: data.displayName,
@@ -90,7 +115,12 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
         activityWindowStart: data.activityWindowStart,
         activityWindowEnd: data.activityWindowEnd,
       })
-      setProfileMsg(result.success ? 'Saved.' : (result.error ?? 'Error'))
+      if (result.success) {
+        setProfileMsg('Saved.')
+      } else {
+        setProfileMsg(null)
+        setActivityWindowError(result.error ?? 'Error')
+      }
     })
   })
 
@@ -180,6 +210,11 @@ export function SettingsClient({ initialProfile }: SettingsClientProps) {
                   <span style={{ color: 'rgba(255,255,255,0.3)', fontFamily: 'Cormorant, serif' }}>to</span>
                   <Input type="time" style={{ flex: 1 }} {...profileForm.register('activityWindowEnd')} />
                 </div>
+                {activityWindowError && (
+                  <p style={{ color: '#ef4444', fontFamily: 'Cormorant, serif', fontSize: '0.875rem', marginTop: '0.375rem' }}>
+                    {activityWindowError}
+                  </p>
+                )}
               </div>
               {profileMsg && (
                 <p style={{ color: profileMsg === 'Saved.' ? '#00d4ff' : '#ef4444', fontFamily: 'Cormorant, serif', fontSize: '0.875rem' }}>

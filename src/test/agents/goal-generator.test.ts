@@ -57,50 +57,56 @@ describe('readyToGenerateQuests tool', () => {
 })
 
 describe('generateQuests tool', () => {
+  const validMilestone = {
+    title: 'Learn the basics of the topic',
+    strategicTaskTitles: ['Study topic fundamentals → write cheatsheet in notes'],
+    strategicTaskDescriptions: ['1. Open resource. 2. Read section. 3. Write key points.'],
+    regularTaskTitle: 'Practice exercises on training platform (10 min)',
+    regularTaskDescription: '1. Open platform. 2. Complete exercise set. 3. Note result.',
+  }
+
   const validQuests = [
     {
       title: 'Complete 30 exercises',
       targetValue: 30,
       unit: 'exercises',
       rationale: 'Measures practice volume',
-      regularTaskCount: 3,
-      strategicTaskCount: 1,
-      regularTaskTitle: 'Python practice session',
-      strategicTaskTitles: ['Design data pipeline architecture'],
+      fatigueType: 'intellectual' as const,
+      milestones: [validMilestone, { ...validMilestone, title: 'Advanced exercises' }],
     },
     {
       title: 'Build 3 projects',
       targetValue: 3,
       unit: 'projects',
       rationale: 'Demonstrates applied skill',
-      regularTaskCount: 2,
-      strategicTaskCount: 2,
-      regularTaskTitle: 'Project coding session',
-      strategicTaskTitles: ['Project planning', 'Project review'],
+      fatigueType: 'intellectual' as const,
+      milestones: [validMilestone],
     },
     {
       title: 'Read 5 books',
       targetValue: 5,
       unit: 'books',
       rationale: 'Builds foundational knowledge',
-      regularTaskCount: 4,
-      strategicTaskCount: 1,
-      regularTaskTitle: 'Reading session',
-      strategicTaskTitles: ['Book summary and key insights'],
+      fatigueType: 'intellectual' as const,
+      milestones: [validMilestone],
     },
   ]
 
-  it('accepts 3-5 quests with all required fields', () => {
+  it('accepts 3-5 quests with milestone structure', () => {
     const schema = z.object({
       quests: z.array(z.object({
         title: z.string(),
         targetValue: z.number().positive(),
         unit: z.string(),
         rationale: z.string(),
-        regularTaskCount: z.number().int().min(0).max(6),
-        strategicTaskCount: z.number().int().min(0).max(8),
-        regularTaskTitle: z.string(),
-        strategicTaskTitles: z.array(z.string()),
+        fatigueType: z.enum(['physical', 'emotional', 'intellectual']),
+        milestones: z.array(z.object({
+          title: z.string(),
+          strategicTaskTitles: z.array(z.string()),
+          strategicTaskDescriptions: z.array(z.string()),
+          regularTaskTitle: z.string(),
+          regularTaskDescription: z.string(),
+        })).min(1),
       })).min(3).max(5),
     })
 
@@ -110,14 +116,26 @@ describe('generateQuests tool', () => {
 
   it('rejects fewer than 3 quests', () => {
     const schema = z.object({
-      quests: z.array(z.object({ title: z.string(), targetValue: z.number().positive(), unit: z.string(), rationale: z.string(), regularTaskCount: z.number(), strategicTaskCount: z.number(), regularTaskTitle: z.string(), strategicTaskTitles: z.array(z.string()) })).min(3).max(5),
+      quests: z.array(z.object({
+        title: z.string(),
+        targetValue: z.number().positive(),
+        unit: z.string(),
+        rationale: z.string(),
+        milestones: z.array(z.object({ title: z.string() })).min(1),
+      })).min(3).max(5),
     })
     expect(() => schema.parse({ quests: validQuests.slice(0, 2) })).toThrow()
   })
 
   it('rejects more than 5 quests', () => {
     const schema = z.object({
-      quests: z.array(z.object({ title: z.string(), targetValue: z.number().positive(), unit: z.string(), rationale: z.string(), regularTaskCount: z.number(), strategicTaskCount: z.number(), regularTaskTitle: z.string(), strategicTaskTitles: z.array(z.string()) })).min(3).max(5),
+      quests: z.array(z.object({
+        title: z.string(),
+        targetValue: z.number().positive(),
+        unit: z.string(),
+        rationale: z.string(),
+        milestones: z.array(z.object({ title: z.string() })).min(1),
+      })).min(3).max(5),
     })
     const sixQuests = Array.from({ length: 6 }, (_, i) => ({ ...validQuests[0], title: `Quest ${i}` }))
     expect(() => schema.parse({ quests: sixQuests })).toThrow()
@@ -125,7 +143,7 @@ describe('generateQuests tool', () => {
 
   it('execute returns phase=planning and quests', async () => {
     const result = await generateQuests.execute!(
-      { quests: validQuests },
+      { goalTitle: 'Test Goal Title', quests: validQuests },
       { messages: [], toolCallId: 'test' }
     )
     expect(result).toMatchObject({ phase: 'planning' })
