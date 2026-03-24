@@ -66,12 +66,6 @@ export const generateQuestsSchema = z.object({
           targetValue: z.number().positive().describe('Numeric target value, e.g. 30'),
           unit: z.string().describe('Unit of measurement, e.g. "exercises completed", "chapters read", "kg lost"'),
           rationale: z.string().describe('1 sentence explaining why this metric captures goal progress'),
-          regularTaskCount: z.number().int().min(0).max(6).describe(
-            'Number of unique regular tasks (repeating via spaced repetition) for this quest. 0–6.'
-          ),
-          strategicTaskCount: z.number().int().min(0).max(8).describe(
-            'Number of strategic task sessions (unique deep-work sessions) for this quest. 0–8.'
-          ),
           fatigueType: z.enum(['physical', 'emotional', 'intellectual']).describe(
             'Which fatigue bar completing tasks in this quest affects. ' +
             '"physical" — body-based habits (workouts, sleep routines, stretching, cooking); ' +
@@ -79,29 +73,40 @@ export const generateQuestsSchema = z.object({
             '"intellectual" — mental/cognitive work (studying, coding, reading, analysis). ' +
             'Choose the type that best matches what the user will actually do.'
           ),
-          regularTaskTitle: z.string().min(10).describe(
-            'Repeatable action title following [VERB] + [SPECIFIC OBJECT] + [LOCATION/RESOURCE]. ' +
-            'Must be ≥ 10 characters and reference a specific resource or location. ' +
-            'BAD: "Study JavaScript" | GOOD: "Complete freeCodeCamp JS array methods exercises (10 min)". ' +
-            'Empty string only if regularTaskCount is 0.'
-          ),
-          regularTaskDescription: z.string().describe(
-            'Step-by-step description for the repeating regular task: 3–5 concrete actions the user should take each session. ' +
-            'Include specific names, tools, techniques, and success criteria. ' +
-            'Example: "1. Open YouTube, search for \'Sonic pen spinning tutorial\'. 2. Watch at 0.5x speed. 3. Attempt the trick 10 times. 4. Note what went wrong in 1 sentence." ' +
-            'Empty string only if regularTaskCount is 0.'
-          ),
-          strategicTaskTitles: z.array(z.string().min(15)).describe(
-            'Titles for each strategic task following [VERB] + [SPECIFIC OBJECT] + [DELIVERABLE]. ' +
-            'Each title must be ≥ 15 characters and state a concrete deliverable. ' +
-            'BAD: "Analyze data" | GOOD: "Analyse competitor pricing data → comparison table in notes". ' +
-            'Length must equal strategicTaskCount. Empty array if strategicTaskCount is 0.'
-          ),
-          strategicTaskDescriptions: z.array(z.string()).describe(
-            'Step-by-step description for each strategic task (same order as strategicTaskTitles). ' +
-            'Each description: 3–5 concrete actions with specific resources, expected output, and success criteria. ' +
-            'Example: "1. Open Notion, create a new page titled \'Competitor Analysis\'. 2. List 5 competitors from memory. 3. For each, note price and key feature. 4. Write a 2-sentence conclusion. Result: comparison table saved." ' +
-            'Length must equal strategicTaskCount. Empty array if strategicTaskCount is 0.'
+          milestones: z.array(z.object({
+            title: z.string().min(5).describe(
+              'Name of this learning milestone, e.g. "Master Python lists", "Learn Sonic trick". ' +
+              'Should describe the concept or skill introduced in this module.'
+            ),
+            strategicTaskTitles: z.array(z.string().min(15)).min(1).max(3).describe(
+              'Theory/context tasks for this milestone (1–3 tasks). ' +
+              'Each title: [VERB] + [SPECIFIC OBJECT] + [DELIVERABLE]. ' +
+              'These establish the mental model BEFORE practice begins. ' +
+              'BAD: "Study lists" | GOOD: "Read Pandas Series docs → write cheatsheet in notes". ' +
+              'Even for motor skills: "Watch Sonic tutorial on YouTube at 0.5x → note wrist movement technique".'
+            ),
+            strategicTaskDescriptions: z.array(z.string()).describe(
+              'Step-by-step descriptions for each strategic task (same order as strategicTaskTitles). ' +
+              'Each: 3–5 concrete actions with specific resources, expected output, and success criteria. ' +
+              'Example: "1. Open YouTube, search Sonic pen spinning tutorial. 2. Watch at 0.5x twice. 3. Write 3-bullet technique note." ' +
+              'Length must equal strategicTaskTitles.length.'
+            ),
+            regularTaskTitle: z.string().describe(
+              'The single repeating practice task for this milestone. Use empty string if no practice needed. ' +
+              'Follows [VERB] + [SPECIFIC OBJECT] + [LOCATION/RESOURCE]. ' +
+              'This task repeats via Ebbinghaus intervals (up to ×7 over 90 days). ' +
+              'BAD: "Practice coding" | GOOD: "Solve Pandas indexing exercises on Kaggle (10 min)". ' +
+              'Min 10 chars if not empty.'
+            ),
+            regularTaskDescription: z.string().describe(
+              'Step-by-step description for one session of the repeating practice task. ' +
+              '3–5 concrete actions. Use empty string if regularTaskTitle is empty.'
+            ),
+          })).min(1).max(4).describe(
+            'Sequential learning milestones for this quest (1–4). ' +
+            'Execute in order: complete one milestone before starting the next. ' +
+            'Each milestone = theory phase (strategic tasks first) → practice phase (optional regular task, starts 2–3 days after). ' +
+            'Milestones from different quests run in parallel.'
           ),
         })
       )
@@ -121,14 +126,21 @@ export const generateQuests = tool({
     logger.debug('generateQuests called', {
       goalTitle,
       questCount: quests?.length ?? 0,
-      totalRegular: quests?.reduce((s, q) => s + q.regularTaskCount, 0) ?? 0,
-      totalStrategic: quests?.reduce((s, q) => s + q.strategicTaskCount, 0) ?? 0,
+      milestonesPerQuest: quests?.map(q => q.milestones?.length ?? 0) ?? [],
+      totalStrategic: quests?.reduce((s, q) =>
+        s + (q.milestones?.reduce((ms, m) => ms + (m.strategicTaskTitles?.length ?? 0), 0) ?? 0), 0) ?? 0,
+      totalRegular: quests?.reduce((s, q) =>
+        s + (q.milestones?.filter(m => m.regularTaskTitle?.length > 0).length ?? 0), 0) ?? 0,
     })
-    logger.debug('[goal-generator] generated tasks', {
-      regularTaskTitles: quests?.map(q => q.regularTaskTitle).filter(Boolean) ?? [],
-      strategicTaskTitles: quests?.flatMap(q => q.strategicTaskTitles) ?? [],
-      regularDescriptionLengths: quests?.map(q => q.regularTaskDescription?.length ?? 0) ?? [],
-      strategicDescriptionCounts: quests?.map(q => q.strategicTaskDescriptions?.length ?? 0) ?? [],
+    logger.debug('[goal-generator] milestone breakdown', {
+      perQuest: quests?.map(q => ({
+        questTitle: q.title,
+        milestones: q.milestones?.map(m => ({
+          milestoneTitle: m.title,
+          strategicCount: m.strategicTaskTitles?.length ?? 0,
+          hasRegular: (m.regularTaskTitle?.length ?? 0) > 0,
+        })) ?? [],
+      })) ?? [],
     })
     return { phase: 'planning', goalTitle, quests }
   },

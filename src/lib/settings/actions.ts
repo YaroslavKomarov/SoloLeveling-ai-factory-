@@ -17,10 +17,42 @@ export interface RetroSettings {
   retrospectiveTime: string
 }
 
+function validateActivityWindow(start: string, end: string): string | null {
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+
+  if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) {
+    return 'Invalid time format (expected HH:MM)'
+  }
+
+  const startMinutes = sh * 60 + sm
+  const endMinutes = eh * 60 + em
+
+  if (eh > 23 || (eh === 23 && em > 59)) {
+    return 'Activity window end cannot be past midnight (23:59)'
+  }
+
+  const duration = endMinutes - startMinutes
+  if (duration <= 0) return 'Activity window end must be after start'
+  if (duration > 12 * 60) return 'Activity window cannot exceed 12 hours'
+
+  return null
+}
+
 export async function updateProfileSettings(
   data: ProfileSettings
 ): Promise<{ success: boolean; error?: string }> {
   logger.info('profile updated', { displayName: data.displayName, timezone: data.timezone })
+
+  const windowError = validateActivityWindow(data.activityWindowStart, data.activityWindowEnd)
+  if (windowError) {
+    logger.warn('Activity window validation failed', {
+      start: data.activityWindowStart,
+      end: data.activityWindowEnd,
+      error: windowError,
+    })
+    return { success: false, error: windowError }
+  }
 
   try {
     const supabase = await createClient()

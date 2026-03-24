@@ -16,13 +16,14 @@ const logger = createLogger('TaskCard')
 interface TaskCardProps {
   task: TaskRow
   goalTitle: string
+  regularStats?: { completed: number; total: number; skipped: number }
 }
 
 const REGULAR_FATIGUE_COST = 4
 const STRATEGIC_FATIGUE_COST = 6
 const FATIGUE_SOFT_LIMIT = 91
 
-export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
+export function TaskCard({ task: initialTask, goalTitle, regularStats }: TaskCardProps) {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -30,6 +31,7 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
   const updateTask = useTasksStore((s) => s.updateTask)
   const setLevelUpPending = useTasksStore((s) => s.setLevelUpPending)
   const todaysTasks = useTasksStore((s) => s.todaysTasks)
+  const missedTasks = useTasksStore((s) => s.missedTasks)
   const incrementFatigue = useUserStore((s) => s.incrementFatigue)
   const setXp = useUserStore((s) => s.setXp)
   const userFatigue = useUserStore((s) => s.fatigue)
@@ -37,8 +39,12 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
   const activeTaskId = useTimerStore((s) => s.activeTaskId)
   const startTask = useTimerStore((s) => s.startTask)
 
-  // Use store task if available (for live updates), fall back to prop
-  const task = todaysTasks.find((t) => t.id === initialTask.id) ?? initialTask
+  // Use store task if available (for live updates), fall back to prop.
+  // Missed tasks live in missedTasks store, not todaysTasks.
+  const task =
+    todaysTasks.find((t) => t.id === initialTask.id) ??
+    missedTasks.find((t) => t.id === initialTask.id) ??
+    initialTask
   const fatigueCost = task.task_type === 'strategic' ? STRATEGIC_FATIGUE_COST : REGULAR_FATIGUE_COST
 
   const fatigueType = task.fatigue_type
@@ -93,48 +99,9 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
       const msg = err instanceof Error ? err.message : String(err)
       logger.error(`Complete task failed, reverting optimistic update`, { taskId: task.id, error: msg })
 
-      // Revert optimistic update
-      updateTask(task.id, { status: 'scheduled' })
+      // Revert optimistic update (restore original status, not always 'scheduled')
+      updateTask(task.id, { status: initialTask.status })
       incrementFatigue(-fatigueCost, fatigueType)
-      setErrorMsg(msg)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  async function handleSkip() {
-    if (isLoading || isFinished) return
-
-    logger.debug(`skip task ${task.id} (type=${task.task_type})`)
-
-    // Optimistic update
-    updateTask(task.id, { status: 'skipped' })
-    setIsLoading(true)
-    setErrorMsg(null)
-
-    try {
-      const res = await fetch(`/api/tasks/${task.id}/skip`, {
-        method: 'POST',
-      })
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error ?? `HTTP ${res.status}`)
-      }
-
-      const data = await res.json()
-      updateTask(task.id, data.task)
-
-      if (data.goalFailed) {
-        logger.warn(`Goal failed after skip`, { taskId: task.id, reason: data.failureReason })
-        setErrorMsg(`Goal failed: ${data.failureReason === 'consecutive_skips' ? '3 consecutive skips' : 'Skip rate exceeded 20%'}`)
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      logger.error(`Skip task failed, reverting optimistic update`, { taskId: task.id, error: msg })
-
-      // Revert optimistic update
-      updateTask(task.id, { status: 'scheduled' })
       setErrorMsg(msg)
     } finally {
       setIsLoading(false)
@@ -307,6 +274,21 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
               Strategic
             </span>
           )}
+          {task.task_type === 'regular' && regularStats && (
+            <span
+              style={{
+                padding: '0.2rem 0.5rem',
+                backgroundColor: regularStats.skipped >= 2 ? 'rgba(236, 72, 153, 0.1)' : 'rgba(255, 255, 255, 0.06)',
+                border: `1px solid ${regularStats.skipped >= 2 ? 'rgba(236, 72, 153, 0.3)' : 'rgba(255, 255, 255, 0.12)'}`,
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '0.625rem',
+                color: regularStats.skipped >= 2 ? '#ec4899' : 'rgba(255, 255, 255, 0.5)',
+                letterSpacing: '0.05em',
+              }}
+            >
+              {regularStats.completed}/{regularStats.total}
+            </span>
+          )}
         </div>
 
         {/* Error message */}
@@ -323,6 +305,24 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
             }}
           >
             {errorMsg}
+          </div>
+        )}
+
+        {/* At-risk warning — shown when exactly 2 skips/misses (next skip fails the goal) */}
+        {task.task_type === 'regular' && regularStats?.skipped === 2 && !isFinished && (
+          <div
+            style={{
+              marginBottom: '0.625rem',
+              padding: '0.375rem 0.625rem',
+              backgroundColor: 'rgba(236, 72, 153, 0.08)',
+              border: '1px solid rgba(236, 72, 153, 0.2)',
+              fontFamily: 'Cinzel, serif',
+              fontSize: '0.5625rem',
+              letterSpacing: '0.08em',
+              color: '#ec4899',
+            }}
+          >
+            ⚠ СЛЕДУЮЩИЙ ПРОПУСК ЗАВЕРШИТ ЦЕЛЬ
           </div>
         )}
 
@@ -360,54 +360,9 @@ export function TaskCard({ task: initialTask, goalTitle }: TaskCardProps) {
               Start
             </motion.button>
 
-            <motion.button
-              onClick={handleSkip}
-              disabled={isLoading}
-              whileTap={isLoading ? undefined : tapScale}
-              style={{
-                padding: '0.5rem 1rem',
-                backgroundColor: 'transparent',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                color: 'rgba(255, 255, 255, 0.4)',
-                fontFamily: 'Cinzel, serif',
-                fontSize: '0.6875rem',
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-                cursor: isLoading ? 'not-allowed' : 'pointer',
-                opacity: isLoading ? 0.5 : 1,
-                transition: 'border-color 0.2s ease',
-              }}
-            >
-              Skip
-            </motion.button>
           </div>
         )}
 
-        {/* In-progress state: only Skip available (complete via banner when timer ends) */}
-        {!isFinished && isActiveInTimer && task.task_type === 'regular' && (
-          <div style={{ display: 'flex', gap: '0.625rem' }}>
-            <motion.button
-              onClick={handleSkip}
-              disabled={isLoading}
-              whileTap={isLoading ? undefined : tapScale}
-              style={{
-                padding: '0.5rem 1rem',
-                backgroundColor: 'transparent',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                color: 'rgba(255, 255, 255, 0.4)',
-                fontFamily: 'Cinzel, serif',
-                fontSize: '0.6875rem',
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-                cursor: isLoading ? 'not-allowed' : 'pointer',
-                opacity: isLoading ? 0.5 : 1,
-                transition: 'border-color 0.2s ease',
-              }}
-            >
-              Skip
-            </motion.button>
-          </div>
-        )}
       </motion.div>
 
     </>

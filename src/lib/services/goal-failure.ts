@@ -9,7 +9,7 @@ const logger = createLogger('GoalFailureService')
 
 type DB = SupabaseClient<Database>
 
-export type FailureReason = 'consecutive_skips' | 'skip_rate'
+export type FailureReason = string
 
 /**
  * Marks a goal as failed, sets failure_reason and failed_at,

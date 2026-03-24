@@ -47,7 +47,7 @@ export function QuestEditor({ quests, onChange }: QuestEditorProps) {
 
   const addQuest = () => {
     if (!canAdd) return
-    onChange([...quests, { title: '', targetValue: 1, unit: '', orderIndex: quests.length, fatigueType: 'intellectual' }])
+    onChange([...quests, { title: '', targetValue: 1, unit: '', orderIndex: quests.length, fatigueType: 'intellectual', milestones: [] }])
   }
 
   const removeQuest = (index: number) => {

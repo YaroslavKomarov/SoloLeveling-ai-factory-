@@ -19,6 +19,16 @@ const XP_STRATEGIC = 100
 const FATIGUE_REGULAR = 4   // % per task
 const FATIGUE_STRATEGIC = 6 // % per task
 
+// Days after the last strategic task of a milestone before the regular task starts
+const REGULAR_OFFSET_DAYS = 2
+
+// Max first-day for a regular task to fit all 7 Ebbinghaus repetitions within 90 days
+// Last interval is 60 days, so firstDay + 59 <= 89 → firstDay <= 30 (1-based: day 31)
+const MAX_REGULAR_FIRST_DAY = 31
+
+// Days allocated for milestone strategic task placement (first portion of goal)
+const MILESTONE_WINDOW_DAYS = 35
+
 // =============================================================
 // Date helpers
 // =============================================================
@@ -66,49 +76,13 @@ export function getRegularTaskDates(startDate: string, firstDay: number): string
 }
 
 // =============================================================
-// Strategic task dates (evenly distributed)
-// =============================================================
-
-/**
- * Returns evenly distributed dates for strategic tasks within the 90-day goal.
- *
- * @param startDate  Goal start date (ISO YYYY-MM-DD)
- * @param count      Number of strategic tasks to schedule
- * @returns          Array of ISO date strings
- */
-export function getStrategicTaskDates(startDate: string, count: number): string[] {
-  if (count === 0) return []
-
-  const dates: string[] = []
-
-  if (count === 1) {
-    // Single task: place at midpoint (day 45)
-    dates.push(addDays(startDate, 44))
-    return dates
-  }
-
-  // Distribute evenly across 90 days (day 1 → day 90)
-  // Use equal spacing: step = (90 - 1) / (count - 1)
-  const step = (GOAL_DURATION_DAYS - 1) / (count - 1)
-
-  for (let i = 0; i < count; i++) {
-    const dayOffset = Math.round(step * i)
-    dates.push(addDays(startDate, dayOffset))
-  }
-
-  return dates
-}
-
-// =============================================================
 // Full 90-day plan generation
 // =============================================================
 
 export interface GoalPlanInput {
   goalType: GoalType
   startDate: string          // ISO date (today)
-  quests: QuestDraft[]
-  /** AI-determined task counts per quest */
-  tasksPerQuest: Array<{ regular: number; strategic: number }>
+  quests: QuestDraft[]       // each quest carries milestones with task info
   /** Fatigue already projected from other active goals */
   existingDailyFatigue: DayFatigueProjection[]
 }
@@ -122,18 +96,24 @@ export interface GoalPlanResult {
 /**
  * Generates a full 90-day task plan for a goal.
  *
- * Regular tasks: Ebbinghaus spacing, starting on evenly distributed first-days.
- * Strategic tasks: evenly distributed across 90 days.
+ * Quests are decomposed into sequential milestones:
+ *   - Strategic tasks of each milestone are scheduled first (theory phase)
+ *   - The regular task (if any) starts REGULAR_OFFSET_DAYS after the last strategic task (practice phase)
+ *   - Milestones within a quest are sequential (each starts after the previous milestone's strategic tasks)
+ *   - Milestones across different quests run in parallel (staggered by quest index)
+ *
+ * Regular tasks use Ebbinghaus intervals [1,2,4,7,14,30,60] from their first occurrence.
  * Fatigue projection: per quest fatigueType (physical / emotional / intellectual).
  */
 export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
-  const { goalType, startDate, quests, tasksPerQuest, existingDailyFatigue } = input
+  const { goalType, startDate, quests, existingDailyFatigue } = input
 
   logger.debug('generateGoalPlan entry', {
     goalType,
     startDate,
     questCount: quests.length,
     existingFatigueDays: existingDailyFatigue.length,
+    milestonesPerQuest: quests.map(q => q.milestones?.length ?? 0),
   })
 
   const tasks: TaskPlanEntry[] = []
@@ -152,34 +132,104 @@ export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
   }
 
   // Process each quest
-  for (let qi = 0; qi < quests.length; qi++) {
-    const quest = quests[qi]
-    const counts = tasksPerQuest[qi] ?? { regular: 2, strategic: 1 }
+  for (const [qi, quest] of quests.entries()) {
     const ft = quest.fatigueType ?? 'intellectual'
+    const milestones = quest.milestones ?? []
 
-    logger.debug('processing quest', { questIndex: qi, title: quest.title, regular: counts.regular, strategic: counts.strategic, fatigueType: ft })
+    logger.debug('processing quest', {
+      questIndex: qi,
+      title: quest.title,
+      milestoneCount: milestones.length,
+      fatigueType: ft,
+    })
 
-    // --- Regular tasks ---
-    if (counts.regular > 0) {
-      // Distribute first-days evenly across first half of goal
-      // (regular tasks need enough room to complete all Ebbinghaus repetitions within 90 days)
-      const regularFirstDays = distributeFirstDays(counts.regular, 1, 30) // start within first 30 days
+    // Global sequence index counter for strategic tasks across all milestones in this quest
+    let globalSequenceIndex = 0
 
-      for (let ri = 0; ri < counts.regular; ri++) {
-        const firstDay = regularFirstDays[ri]
-        const dates = getRegularTaskDates(startDate, firstDay)
+    // Process each milestone in order — they share a sequential time window
+    for (const [mi, milestone] of milestones.entries()) {
+      const strategicCount = milestone.strategicTaskTitles?.length ?? 0
+      const hasRegular = (milestone.regularTaskTitle?.length ?? 0) > 0
 
-        logger.debug('regular task dates', { questIndex: qi, taskIndex: ri, firstDay, dates })
+      logger.debug('processing milestone', {
+        questIndex: qi,
+        milestoneIndex: mi,
+        milestoneTitle: milestone.title,
+        strategicCount,
+        hasRegular,
+      })
 
-        for (let di = 0; di < dates.length; di++) {
-          const date = dates[di]
-          const regularTitle = quest.regularTaskTitle ?? quest.title
-          logger.debug('regular task title source', {
+      // --- Strategic tasks (theory phase) ---
+      // Milestones are sequential within a quest: each milestone's window starts after the previous one.
+      // Window is partitioned across the first MILESTONE_WINDOW_DAYS days, staggered per quest.
+      const strategicDates = getMilestoneStrategicDates(
+        startDate,
+        mi,
+        milestones.length,
+        strategicCount,
+        qi,
+        quests.length,
+      )
+
+      logger.debug('milestone strategic dates', {
+        questIndex: qi,
+        milestoneIndex: mi,
+        dates: strategicDates,
+      })
+
+      for (const [si, date] of strategicDates.entries()) {
+        const specificTitle = milestone.strategicTaskTitles?.[si]
+        const strategicTitle = specificTitle ?? `${milestone.title} — Theory Session ${si + 1}`
+        const desc = milestone.strategicTaskDescriptions?.[si]
+
+        tasks.push({
+          questIndex: qi,
+          title: strategicTitle,
+          taskType: 'strategic',
+          scheduledDate: date,
+          xpReward: XP_STRATEGIC,
+          fatigueCost: FATIGUE_STRATEGIC,
+          fatigueType: ft,
+          sequenceIndex: globalSequenceIndex++,
+          description: desc,
+        })
+
+        const day = ensureDay(date)
+        day[ft] += FATIGUE_STRATEGIC
+        day.taskCount += 1
+      }
+
+      // --- Regular task (practice phase) ---
+      // Starts REGULAR_OFFSET_DAYS after the last strategic task of this milestone.
+      // Then repeats via Ebbinghaus intervals.
+      if (hasRegular) {
+        const lastStrategicDate = strategicDates[strategicDates.length - 1] ?? startDate
+        const lastStrategicDayOffset = daysBetween(startDate, lastStrategicDate)
+        const regularFirstDay = lastStrategicDayOffset + REGULAR_OFFSET_DAYS + 1  // 1-based
+
+        if (regularFirstDay > MAX_REGULAR_FIRST_DAY) {
+          logger.warn('regular task first day exceeds safe window — Ebbinghaus chain may be truncated', {
             questIndex: qi,
-            taskIndex: ri,
-            source: quest.regularTaskTitle ? 'regularTaskTitle' : 'quest.title',
-            title: regularTitle,
+            milestoneIndex: mi,
+            milestoneTitle: milestone.title,
+            regularFirstDay,
+            maxSafeDay: MAX_REGULAR_FIRST_DAY,
           })
+        }
+
+        const regularDates = getRegularTaskDates(startDate, regularFirstDay)
+        const regularTitle = milestone.regularTaskTitle || milestone.title
+
+        logger.debug('milestone regular task dates', {
+          questIndex: qi,
+          milestoneIndex: mi,
+          milestoneTitle: milestone.title,
+          regularFirstDay,
+          repetitionCount: regularDates.length,
+          dates: regularDates,
+        })
+
+        for (const [di, date] of regularDates.entries()) {
           tasks.push({
             questIndex: qi,
             title: regularTitle,
@@ -189,49 +239,13 @@ export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
             fatigueCost: FATIGUE_REGULAR,
             fatigueType: ft,
             repetitionIndex: di,  // 0-6 Ebbinghaus index
-            description: quest.regularTaskDescription ?? undefined,
+            description: milestone.regularTaskDescription || undefined,
           })
 
           const day = ensureDay(date)
           day[ft] += FATIGUE_REGULAR
           day.taskCount += 1
         }
-      }
-    }
-
-    // --- Strategic tasks ---
-    if (counts.strategic > 0) {
-      // Each quest gets its own set of strategic tasks, staggered by quest index
-      // to avoid all quests' strategic tasks landing on the same days
-      const strategicDates = getStrategicTaskDatesForQuest(startDate, counts.strategic, qi, quests.length)
-
-      logger.debug('strategic task dates', { questIndex: qi, dates: strategicDates })
-
-      for (let si = 0; si < strategicDates.length; si++) {
-        const date = strategicDates[si]
-        const specificTitle = quest.strategicTaskTitles?.[si]
-        const strategicTitle = specificTitle ?? `${quest.title} — Strategic Session ${si + 1}`
-        logger.debug('strategic task title source', {
-          questIndex: qi,
-          sessionIndex: si,
-          source: specificTitle ? 'strategicTaskTitles' : 'generated',
-          title: strategicTitle,
-        })
-        tasks.push({
-          questIndex: qi,
-          title: strategicTitle,
-          taskType: 'strategic',
-          scheduledDate: date,
-          xpReward: XP_STRATEGIC,
-          fatigueCost: FATIGUE_STRATEGIC,
-          fatigueType: ft,
-          sequenceIndex: si,
-          description: quest.strategicTaskDescriptions?.[si] ?? undefined,
-        })
-
-        const day = ensureDay(date)
-        day[ft] += FATIGUE_STRATEGIC
-        day.taskCount += 1
       }
     }
   }
@@ -243,7 +257,7 @@ export function generateGoalPlan(input: GoalPlanInput): GoalPlanResult {
   const fatigueProjection = Array.from(fatigueMap.values())
     .sort((a, b) => a.date.localeCompare(b.date))
 
-  // Detect load violation days (intellectual fatigue > 100%)
+  // Detect load violation days
   const loadViolationDays = fatigueProjection
     .filter(d => d.intellectual > 100 || d.physical > 100 || d.emotional > 100)
     .map(d => d.date)
@@ -273,30 +287,50 @@ function distributeFirstDays(count: number, minDay: number, maxDay: number): num
 }
 
 /**
- * Evenly distribute strategic tasks for a specific quest,
- * with a slight offset per quest to avoid same-day collisions.
+ * Returns scheduled dates for strategic tasks of a single milestone.
+ *
+ * Milestones within a quest are sequential — each gets a time window.
+ * The window is computed by partitioning MILESTONE_WINDOW_DAYS across all milestones.
+ * A quest-level offset spreads quests apart to avoid same-day collisions.
+ *
+ * @param startDate      Goal start date (ISO YYYY-MM-DD)
+ * @param milestoneIndex 0-based index of this milestone within its quest
+ * @param totalMilestones Total number of milestones in this quest
+ * @param strategicCount  Number of strategic tasks in this milestone (≥ 1)
+ * @param questIndex     0-based index of the quest (for cross-quest staggering)
+ * @param totalQuests    Total number of quests (for cross-quest staggering)
  */
-function getStrategicTaskDatesForQuest(
+function getMilestoneStrategicDates(
   startDate: string,
-  count: number,
+  milestoneIndex: number,
+  totalMilestones: number,
+  strategicCount: number,
   questIndex: number,
-  totalQuests: number
+  totalQuests: number,
 ): string[] {
-  if (count === 0) return []
+  if (strategicCount === 0) return []
 
-  // Offset each quest's strategic tasks by a few days to spread them out
-  const offsetDays = totalQuests > 1 ? Math.round((questIndex / totalQuests) * 14) : 0
+  // Quest-level stagger: spread quests by up to 7 days so strategic tasks don't all land on the same day
+  const questOffsetDays = totalQuests > 1 ? Math.round((questIndex / totalQuests) * 7) : 0
 
-  if (count === 1) {
-    const dayOffset = Math.min(44 + offsetDays, GOAL_DURATION_DAYS - 1)
+  // Milestone window: partition MILESTONE_WINDOW_DAYS equally among milestones
+  const windowWidth = Math.floor(MILESTONE_WINDOW_DAYS / Math.max(totalMilestones, 1))
+  // Milestone i starts at: milestoneIndex * windowWidth + questOffset (day offset from goal start)
+  const milestoneStartOffset = milestoneIndex * windowWidth + questOffsetDays
+
+  if (strategicCount === 1) {
+    // Single strategic task: place at the start of the milestone window
+    const dayOffset = Math.min(milestoneStartOffset, GOAL_DURATION_DAYS - 1)
     return [addDays(startDate, dayOffset)]
   }
 
+  // Multiple strategic tasks: spread within the milestone window (1-day min gap)
   const dates: string[] = []
-  const step = (GOAL_DURATION_DAYS - 1) / (count - 1)
+  const usableWindow = Math.min(windowWidth - 1, strategicCount - 1)  // max spread within window
+  const step = usableWindow / (strategicCount - 1)
 
-  for (let i = 0; i < count; i++) {
-    const rawOffset = Math.round(step * i) + offsetDays
+  for (let i = 0; i < strategicCount; i++) {
+    const rawOffset = milestoneStartOffset + Math.round(step * i)
     const dayOffset = Math.min(rawOffset, GOAL_DURATION_DAYS - 1)
     dates.push(addDays(startDate, dayOffset))
   }

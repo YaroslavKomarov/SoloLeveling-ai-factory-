@@ -80,6 +80,42 @@ When generating quests (Key Results):
 - Regular task title: a short, repeatable action (e.g., "Practice Python exercises", "Morning run")
 - Strategic task titles: specific, outcome-oriented sessions (e.g., "Design system architecture", "Write chapter outline")
 
+## Quest Milestones (Learning Modules)
+
+Before generating tasks, **decompose every quest into 1–4 sequential learning milestones**.
+
+A milestone is a self-contained learning module with two phases:
+1. **Theory phase** — 1–3 strategic tasks that introduce a concept, technique, or topic
+2. **Practice phase** — 0–1 regular task that drills the skill via spaced repetition (Ebbinghaus)
+
+### Milestone rules:
+1. Milestones within a quest execute **sequentially** — complete one before starting the next
+2. Milestones from **different quests run in parallel** (interleaved by the daily planner)
+3. Strategic tasks always come **first** in a milestone — they establish the mental model before practice begins
+4. The regular task (if any) starts **2–3 days after** the milestone's strategic tasks
+5. Even for pure motor skill goals, the first strategic task = watching/studying the technique
+6. A milestone **CAN have zero regular tasks** (pure theory milestone — e.g. orientation, planning)
+7. A milestone **MUST have at least one strategic task**
+
+### Milestone examples:
+
+**Skill-based goal** — "Learn pen spinning basics":
+Quest: "Execute 3 pen spinning tricks consistently"
+- Milestone 1: [Strategic: "Watch Sonic tutorial on YouTube at 0.5x — observe wrist movement → write technique note"] → [Regular: "Practice Sonic — 10 attempts at home"]
+- Milestone 2: [Strategic: "Watch Charge tutorial at 0.5x — observe thumb position → write note"] → [Regular: "Practice Charge — 10 attempts at home"]
+- Milestone 3: [Strategic: "Watch FinSpin tutorial at 0.5x → note key difference from Sonic"] → [Regular: "Practice FinSpin — 10 attempts at home"]
+
+**Knowledge-based goal** — "Master Python data analysis":
+Quest: "Complete 30 data manipulation exercises"
+- Milestone 1: [Strategic: "Read Pandas Series & DataFrame docs → write cheatsheet in notes", "Watch pandas intro tutorial (first 20 min) → note 3 key methods"] → [Regular: "Solve 5 Pandas indexing exercises on Kaggle (10 min)"]
+- Milestone 2: [Strategic: "Study groupby and aggregations → write examples in notes"] → [Regular: "Solve 5 Pandas groupby exercises on Kaggle (10 min)"]
+- Milestone 3: [Strategic: "Study merge/join operations → write comparison table of join types"] → [Regular: "Solve 5 Pandas merge exercises on Kaggle (10 min)"]
+
+**Exam prep goal** — "Pass probability theory exam":
+Quest: "Master combinatorics"
+- Milestone 1: [Strategic: "Study permutations — theory + 2 solved examples → write formulas in notes"] → [Regular: "Solve 5 permutation problems from textbook ch.3 (10 min)"]
+- Milestone 2: [Strategic: "Study combinations — theory + 2 solved examples → write formulas in notes"] → [Regular: "Solve 5 combination problems from textbook ch.3 (10 min)"]
+
 ## Task Formulation Rules
 
 Every task title MUST follow: **[ACTION VERB] + [SPECIFIC OBJECT] + [MEASURABLE OUTCOME]**
@@ -118,13 +154,17 @@ Every task MUST have a description with 3–5 concrete, actionable steps. The us
 **For \`strategicTaskDescriptions\`:** each entry describes a unique session — include the specific deliverable (note, table, draft, etc.) expected at the end.
 
 ## Task Count Guidelines
-For **skill-based** goals:
-- 3–4 regular tasks per quest (habit-building)
-- 1–2 strategic tasks per quest (reflection, planning)
 
-For **knowledge-based** goals:
-- 1–2 regular tasks per quest (review, flashcards)
-- 3–5 strategic tasks per quest (deep work, research, writing)
+Determine **1–4 milestones per quest** (not flat task counts). Then for each milestone:
+
+For **skill-based** goals (more practice):
+- Prefer 2–3 milestones per quest, each with 1 strategic + 1 regular task
+- Each milestone = one new technique/movement/concept to learn and drill
+
+For **knowledge-based** goals (more theory):
+- Prefer 2–4 milestones per quest, each with 1–3 strategic tasks + 0–1 regular task
+- Regular tasks optional: only add when a concept can be reinforced through problem-solving or review exercises
+- Pure theory milestones (strategic only) are valid when the quest is research/writing/planning oriented
 
 ## Context
 The following context is injected per request:

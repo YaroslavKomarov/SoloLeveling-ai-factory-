@@ -159,7 +159,7 @@ describe('completeTask', () => {
     const fatigue = makeMockFatigue()
     const supabase = makeSupabaseMock(task, fatigue)
 
-    const result = await completeTask(supabase, 'user-1', 'task-1', 'My reflection on this strategic task')
+    const result = await completeTask(supabase, 'user-1', 'task-1', 'My detailed reflection on this strategic task — I have learned and applied the key concepts successfully today.')
     expect(result.xpGained).toBe(100)
   })
 
@@ -201,218 +201,130 @@ describe('completeTask', () => {
 // skipTask tests
 // =============================================================
 
+/** Build a Supabase mock for skipTask tests */
+function makeSkipTaskSupabaseMock(task: TaskRow, siblingSkipCount: number, hasGoalsTable = false) {
+  // Reusable no-op update chain
+  const noopUpdate = vi.fn().mockReturnValue({
+    eq: vi.fn().mockResolvedValue({ error: null }),
+  })
+
+  return {
+    from: vi.fn().mockImplementation((table: string) => {
+      if (table === 'tasks') {
+        return {
+          select: vi.fn().mockImplementation((fields?: string | object, opts?: object) => {
+            // Count query: .select('id', { count: 'exact', head: true }).eq().eq().in()
+            if (typeof opts === 'object' && (opts as { count?: string }).count === 'exact') {
+              return {
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockReturnValue({
+                    in: vi.fn().mockResolvedValue({ count: siblingSkipCount, error: null }),
+                  }),
+                }),
+              }
+            }
+            // Sibling fetch: .select('id, total_occurrences').eq().eq() → returns array
+            if (typeof fields === 'string' && fields.includes('total_occurrences')) {
+              return {
+                eq: vi.fn().mockReturnValue({
+                  eq: vi.fn().mockResolvedValue({
+                    data: [{ id: task.id, total_occurrences: task.total_occurrences }],
+                    error: null,
+                  }),
+                }),
+              }
+            }
+            // Default task fetch: .select().eq().maybeSingle()
+            return {
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({ data: task, error: null }),
+              }),
+            }
+          }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                single: vi.fn().mockResolvedValue({ data: { ...task, status: 'skipped' }, error: null }),
+              }),
+              ...noopUpdate(),
+            }),
+          }),
+        }
+      }
+      if (table === 'goals') {
+        return {
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockResolvedValue({ error: null }),
+            }),
+          }),
+        }
+      }
+      return {}
+    }),
+  } as unknown as DB
+}
+
 describe('skipTask', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('increments consecutive_skips on skip', async () => {
+  it('increments skip counters and does not fail goal when < 2 sibling skips', async () => {
     vi.resetModules()
     const { skipTask } = await import('@/lib/services/task-execution')
+    const { failGoal } = await import('@/lib/services/goal-failure')
 
-    // consecutive_skips=1 → after skip: 2 (< 3, no consecutive fail)
-    // total_skips=1, total_occurrences=15 → after: 2/16 = 12.5% < 20% (no skip rate fail)
-    const task = makeMockTask({ consecutive_skips: 1, total_skips: 1, total_occurrences: 15 })
-
-    // Create mock that tracks updates
-    const updateMock = vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        select: vi.fn().mockReturnValue({
-          single: vi.fn().mockResolvedValue({ data: { ...task, status: 'skipped' }, error: null }),
-        }),
-        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-      }),
-    })
-
-    const supabase = {
-      from: vi.fn().mockImplementation((table: string) => {
-        if (table === 'tasks') {
-          return {
-            select: vi.fn().mockImplementation((fields?: string) => {
-              if (fields === 'id, total_occurrences') {
-                // Sibling tasks query: .select('id, total_occurrences').eq('goal_id').eq('title')
-                return {
-                  eq: vi.fn().mockReturnValue({
-                    eq: vi.fn().mockResolvedValue({
-                      data: [{ id: 'task-1', total_occurrences: 15 }],
-                      error: null,
-                    }),
-                  }),
-                }
-              }
-              // Default fetch task query: .select().eq().maybeSingle()
-              return {
-                eq: vi.fn().mockReturnValue({
-                  maybeSingle: vi.fn().mockResolvedValue({ data: task, error: null }),
-                }),
-              }
-            }),
-            update: updateMock,
-          }
-        }
-        return {}
-      }),
-    } as unknown as DB
+    const task = makeMockTask({ consecutive_skips: 0, total_skips: 0, total_occurrences: 7 })
+    const supabase = makeSkipTaskSupabaseMock(task, 1) // 1 skipped sibling after this skip
 
     const result = await skipTask(supabase, 'user-1', 'task-1')
     expect(result.goalFailed).toBe(false)
+    expect(vi.mocked(failGoal)).not.toHaveBeenCalled()
   })
 
-  it('triggers goal failure at 3 consecutive skips', async () => {
+  it('triggers goal failure when 3+ siblings are skipped/missed', async () => {
     vi.resetModules()
     const { skipTask } = await import('@/lib/services/task-execution')
     const { failGoal } = await import('@/lib/services/goal-failure')
 
-    // 2 consecutive skips currently, this skip will make it 3 → fail
-    const task = makeMockTask({
-      consecutive_skips: 2,
-      total_skips: 3,
-      total_occurrences: 10,
-    })
-
-    const supabase = {
-      from: vi.fn().mockImplementation((table: string) => {
-        if (table === 'tasks') {
-          return {
-            select: vi.fn().mockImplementation((fields?: string) => {
-              if (!fields) {
-                return {
-                  eq: vi.fn().mockReturnValue({
-                    maybeSingle: vi.fn().mockResolvedValue({ data: task, error: null }),
-                  }),
-                }
-              }
-              // select('id, total_occurrences') for siblings
-              return {
-                eq: vi.fn().mockReturnValue({
-                  eq: vi.fn().mockResolvedValue({
-                    data: [{ id: 'task-1', total_occurrences: 10 }],
-                    error: null,
-                  }),
-                }),
-              }
-            }),
-            update: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                select: vi.fn().mockReturnValue({
-                  single: vi.fn().mockResolvedValue({ data: { ...task, status: 'skipped' }, error: null }),
-                }),
-                resolvedValue: { error: null },
-              }),
-            }),
-          }
-        }
-        return {}
-      }),
-    } as unknown as DB
+    const task = makeMockTask({ consecutive_skips: 2, total_skips: 2, total_occurrences: 7 })
+    // After this skip, 3 siblings will be skipped/missed
+    const supabase = makeSkipTaskSupabaseMock(task, 3, true)
 
     const result = await skipTask(supabase, 'user-1', 'task-1')
     expect(result.goalFailed).toBe(true)
-    expect(result.failureReason).toBe('consecutive_skips')
-    expect(vi.mocked(failGoal)).toHaveBeenCalledWith(expect.anything(), 'goal-1', 'consecutive_skips')
+    expect(result.failureReason).toBe(`skip_threshold:${task.title}`)
+    expect(vi.mocked(failGoal)).toHaveBeenCalledWith(
+      expect.anything(),
+      'goal-1',
+      `skip_threshold:${task.title}`
+    )
   })
 
-  it('triggers goal failure at 20% skip rate', async () => {
+  it('marks goal at-risk when exactly 2 siblings are skipped/missed', async () => {
     vi.resetModules()
     const { skipTask } = await import('@/lib/services/task-execution')
     const { failGoal } = await import('@/lib/services/goal-failure')
 
-    // total_skips=3, total_occurrences=14 → after skip: 4/15 = 26.7% > 20%
-    const task = makeMockTask({
-      consecutive_skips: 0,
-      total_skips: 3,
-      total_occurrences: 14,
-    })
-
-    const supabase = {
-      from: vi.fn().mockImplementation((table: string) => {
-        if (table === 'tasks') {
-          return {
-            select: vi.fn().mockImplementation((fields?: string) => {
-              if (!fields) {
-                return {
-                  eq: vi.fn().mockReturnValue({
-                    maybeSingle: vi.fn().mockResolvedValue({ data: task, error: null }),
-                  }),
-                }
-              }
-              return {
-                eq: vi.fn().mockReturnValue({
-                  eq: vi.fn().mockResolvedValue({
-                    data: [{ id: 'task-1', total_occurrences: 14 }],
-                    error: null,
-                  }),
-                }),
-              }
-            }),
-            update: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                select: vi.fn().mockReturnValue({
-                  single: vi.fn().mockResolvedValue({ data: { ...task, status: 'skipped' }, error: null }),
-                }),
-              }),
-            }),
-          }
-        }
-        return {}
-      }),
-    } as unknown as DB
+    const task = makeMockTask({ consecutive_skips: 1, total_skips: 1, total_occurrences: 7 })
+    // After this skip, exactly 2 siblings will be skipped/missed
+    const supabase = makeSkipTaskSupabaseMock(task, 2, true)
 
     const result = await skipTask(supabase, 'user-1', 'task-1')
-    expect(result.goalFailed).toBe(true)
-    expect(result.failureReason).toBe('skip_rate')
+    expect(result.goalFailed).toBe(false)
+    expect(vi.mocked(failGoal)).not.toHaveBeenCalled()
   })
 
-  it('does NOT fail goal at 19% skip rate', async () => {
+  it('does NOT check failure for strategic tasks', async () => {
     vi.resetModules()
     const { skipTask } = await import('@/lib/services/task-execution')
     const { failGoal } = await import('@/lib/services/goal-failure')
 
-    // total_skips=2, total_occurrences=10 → after skip: 3/11 = 27.3%... wait
-    // Let's use: total_skips=1, total_occurrences=9 → after skip: 2/10 = 20% exactly — boundary
-    // For 19%: total_skips=1, total_occurrences=10 → after: 2/11 = 18.2% < 20%
-    const task = makeMockTask({
-      consecutive_skips: 0,
-      total_skips: 1,
-      total_occurrences: 10,
-    })
-
-    const supabase = {
-      from: vi.fn().mockImplementation((table: string) => {
-        if (table === 'tasks') {
-          return {
-            select: vi.fn().mockImplementation((fields?: string) => {
-              if (!fields) {
-                return {
-                  eq: vi.fn().mockReturnValue({
-                    maybeSingle: vi.fn().mockResolvedValue({ data: task, error: null }),
-                  }),
-                }
-              }
-              return {
-                eq: vi.fn().mockReturnValue({
-                  eq: vi.fn().mockResolvedValue({
-                    data: [{ id: 'task-1', total_occurrences: 10 }],
-                    error: null,
-                  }),
-                }),
-              }
-            }),
-            update: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                select: vi.fn().mockReturnValue({
-                  single: vi.fn().mockResolvedValue({ data: { ...task, status: 'skipped' }, error: null }),
-                }),
-              }),
-            }),
-          }
-        }
-        return {}
-      }),
-    } as unknown as DB
+    const task = makeMockTask({ task_type: 'strategic', consecutive_skips: 5, total_skips: 5 })
+    const supabase = makeSkipTaskSupabaseMock(task, 10) // high count, but strategic → no failure
 
     const result = await skipTask(supabase, 'user-1', 'task-1')
-    // 2/11 = 18.2% < 20%
     expect(result.goalFailed).toBe(false)
     expect(vi.mocked(failGoal)).not.toHaveBeenCalled()
   })
