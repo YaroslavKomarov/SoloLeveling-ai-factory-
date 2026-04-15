@@ -18,6 +18,8 @@ export interface UserRow {
   retrospective_day: number | null
   retrospective_time: string | null
   onboarding_completed: boolean
+  schedulerbot_token: string | null
+  schedulerbot_connected: boolean
   created_at: string
   updated_at: string
 }
@@ -29,6 +31,8 @@ export type UserInsert = Omit<UserRow, 'created_at' | 'updated_at'> & {
   activity_window_start?: string
   activity_window_end?: string
   onboarding_completed?: boolean
+  schedulerbot_token?: string | null
+  schedulerbot_connected?: boolean
 }
 
 export type UserUpdate = Partial<Omit<UserRow, 'id' | 'created_at'>>
@@ -95,6 +99,7 @@ export interface SphereRow {
   description: string | null
   icon: string
   order_index: number
+  period_id: string | null  // linked activity period (set during onboarding)
   created_at: string
   updated_at: string
 }
@@ -103,6 +108,7 @@ export type SphereInsert = Omit<SphereRow, 'id' | 'created_at' | 'updated_at'> &
   description?: string | null
   icon?: string
   order_index?: number
+  period_id?: string | null
 }
 
 export type SphereUpdate = Partial<Omit<SphereRow, 'id' | 'user_id' | 'created_at'>>
@@ -474,6 +480,22 @@ export type TaskTemplateInsert = Omit<TaskTemplateRow, 'id' | 'created_at' | 'up
 
 export type TaskTemplateUpdate = Partial<Omit<TaskTemplateRow, 'id' | 'user_id' | 'created_at'>>
 
+// =============================================================
+// Milestone A: Onboarding types
+// =============================================================
+
+export interface ActivityPeriodRow {
+  id: string
+  user_id: string
+  name: string
+  days_of_week: number[]  // 0=Mon .. 6=Sun
+  start_time: string      // time as string e.g. "09:00:00"
+  end_time: string
+  created_at: string
+}
+
+export type ActivityPeriodInsert = Omit<ActivityPeriodRow, 'id' | 'created_at'>
+
 export interface Database {
   public: {
     Tables: {
@@ -566,6 +588,32 @@ export interface Database {
         Row: TaskTemplateRow
         Insert: TaskTemplateInsert
         Update: TaskTemplateUpdate
+      }
+      push_subscriptions: {
+        Row: {
+          id: string
+          user_id: string
+          endpoint: string
+          p256dh: string | null
+          auth: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          user_id: string
+          endpoint: string
+          p256dh?: string | null
+          auth?: string | null
+        }
+        Update: Partial<{
+          p256dh: string | null
+          auth: string | null
+        }>
+      }
+      activity_periods: {
+        Row: ActivityPeriodRow
+        Insert: ActivityPeriodInsert
+        Update: Partial<Omit<ActivityPeriodRow, 'id' | 'user_id' | 'created_at'>>
       }
     }
     Functions: Record<string, never>

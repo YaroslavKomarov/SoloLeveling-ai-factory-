@@ -1,123 +1,77 @@
 /**
  * Markdown templates for @me profile notes.
- * These are created once during onboarding and can be edited by the user later.
+ * Sparse stubs — section headers only. The onboarding agent fills
+ * them in conversationally via the save_profile_section tool.
+ *
+ * Files created during onboarding:
+ *   @me/profile.md   — who you are, life context
+ *   @me/projects.md  — active projects and priorities
+ *   @me/schedule.md  — life rhythm, working hours
+ *   @me/periodic.md  — periodic events, important dates
+ *   @me/patterns.md  — read-only, maintained by retrospective system
  */
 
-export interface ProfileTemplateData {
-  name: string
-  timezone: string
-  activityWindow: string
-}
-
-export function generateProfileMd(data: ProfileTemplateData): string {
+export function generateProfileMd(): string {
   return `---
-name: ${data.name}
-timezone: ${data.timezone}
-activity_window: ${data.activityWindow}
+type: profile
 created_at: ${new Date().toISOString()}
 ---
 
 # Profile
 
-Name: ${data.name}
-Timezone: ${data.timezone}
-Activity Window: ${data.activityWindow}
+## Who I Am
 
-## About Me
+## Life Context
 
-<!-- Describe yourself here -->
+## Values & Priorities
 `
 }
 
-export function generateCareerMd(): string {
+export function generateProjectsMd(): string {
   return `---
-type: career
+type: projects
 created_at: ${new Date().toISOString()}
 ---
 
-# Career
+# Projects
 
-## Current Role
+## Active Projects
 
-<!-- Your current position, company, years of experience -->
+## On Hold
 
-## Goals
-
-<!-- Career objectives for the next 1-3 years -->
-
-## Skills
-
-<!-- Technical and professional skills -->
+## Completed Recently
 `
 }
 
-export function generateSkillsMd(): string {
+export function generateScheduleMd(): string {
   return `---
-type: skills
+type: schedule
 created_at: ${new Date().toISOString()}
 ---
 
-# Skills
+# Schedule
 
-## Technical Skills
+## Working Hours
 
-<!-- Programming languages, frameworks, tools -->
+## Energy Peaks
 
-## Soft Skills
-
-<!-- Communication, leadership, problem-solving -->
-
-## Learning
-
-<!-- Skills you are currently developing -->
+## Life Rhythm
 `
 }
 
-export function generateInterestsMd(): string {
+export function generatePeriodicMd(): string {
   return `---
-type: interests
+type: periodic
 created_at: ${new Date().toISOString()}
 ---
 
-# Interests
+# Periodic Events
 
-## Professional Interests
+## Weekly Routines
 
-<!-- Topics that excite you professionally -->
+## Monthly Events
 
-## Personal Interests
-
-<!-- Hobbies, activities, passions -->
-
-## Curiosities
-
-<!-- Things you want to explore in the future -->
-`
-}
-
-export function generatePersonalityMd(): string {
-  return `---
-type: personality
-created_at: ${new Date().toISOString()}
----
-
-# Personality
-
-## Strengths
-
-<!-- Your key strengths -->
-
-## Growth Areas
-
-<!-- Areas you are actively improving -->
-
-## Work Style
-
-<!-- How you prefer to work (deep work, sprints, etc.) -->
-
-## Motivators
-
-<!-- What drives your best performance -->
+## Important Dates
 `
 }
 

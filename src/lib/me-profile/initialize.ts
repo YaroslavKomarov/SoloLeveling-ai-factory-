@@ -1,22 +1,21 @@
 /**
- * Initializes the 6 @me profile notes in the notes table.
- * Called during onboarding Step 2 (profile setup).
+ * Initializes the 5 @me profile notes in the notes table.
+ * Called during onboarding. Notes are sparse stubs — the onboarding
+ * agent fills them in conversationally via save_profile_section tool.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase/types'
 import { createNote, getNoteByPath } from '@/lib/supabase/notes'
 import {
   generateProfileMd,
-  generateCareerMd,
-  generateSkillsMd,
-  generateInterestsMd,
-  generatePersonalityMd,
+  generateProjectsMd,
+  generateScheduleMd,
+  generatePeriodicMd,
   generatePatternsMd,
-  type ProfileTemplateData,
 } from './templates'
 import { createLogger } from '@/lib/logger'
 
-const logger = createLogger('me-profile/initialize')
+const logger = createLogger('me-profile')
 
 type DB = SupabaseClient<Database>
 
@@ -29,36 +28,30 @@ interface MeNote {
 
 export async function initializeUserProfile(
   supabase: DB,
-  userId: string,
-  profileData: ProfileTemplateData
-): Promise<{ success: boolean; error?: string }> {
-  logger.info('starting', { userId })
+  userId: string
+): Promise<void> {
+  logger.debug('initializing user profile notes', { userId })
 
   const notes: MeNote[] = [
     {
       path: '@me/profile.md',
       title: 'Profile',
-      content: generateProfileMd(profileData),
+      content: generateProfileMd(),
     },
     {
-      path: '@me/career.md',
-      title: 'Career',
-      content: generateCareerMd(),
+      path: '@me/projects.md',
+      title: 'Projects',
+      content: generateProjectsMd(),
     },
     {
-      path: '@me/skills.md',
-      title: 'Skills',
-      content: generateSkillsMd(),
+      path: '@me/schedule.md',
+      title: 'Schedule',
+      content: generateScheduleMd(),
     },
     {
-      path: '@me/interests.md',
-      title: 'Interests',
-      content: generateInterestsMd(),
-    },
-    {
-      path: '@me/personality.md',
-      title: 'Personality',
-      content: generatePersonalityMd(),
+      path: '@me/periodic.md',
+      title: 'Periodic Events',
+      content: generatePeriodicMd(),
     },
     {
       path: '@me/patterns.md',
@@ -68,37 +61,30 @@ export async function initializeUserProfile(
     },
   ]
 
-  try {
-    let created = 0
+  let created = 0
 
-    for (const note of notes) {
-      // Skip if already exists (idempotent)
-      const existing = await getNoteByPath(supabase, userId, note.path)
-      if (existing) {
-        logger.debug('note already exists, skipping', { path: note.path })
-        continue
-      }
-
-      await createNote(supabase, {
-        user_id: userId,
-        path: note.path,
-        title: note.title,
-        content: note.content,
-        tags: [],
-        metadata: {},
-        wikilinks: [],
-        is_readonly: note.is_readonly ?? false,
-      })
-
-      created++
-      logger.debug('note created', { path: note.path })
+  for (const note of notes) {
+    // Idempotent — skip if already exists
+    const existing = await getNoteByPath(supabase, userId, note.path)
+    if (existing) {
+      logger.debug('note already exists, skipping', { path: note.path })
+      continue
     }
 
-    logger.info('completed', { userId, created, total: notes.length })
-    return { success: true }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    logger.error('failed', { userId, error: message })
-    return { success: false, error: message }
+    await createNote(supabase, {
+      user_id: userId,
+      path: note.path,
+      title: note.title,
+      content: note.content,
+      tags: [],
+      metadata: {},
+      wikilinks: [],
+      is_readonly: note.is_readonly ?? false,
+    })
+
+    created++
+    logger.debug('created @me note', { path: note.path })
   }
+
+  logger.info('user profile initialized', { userId, created })
 }
