@@ -23,15 +23,17 @@ SoloLeveling v2 is a PWA for goal planning and achievement based on the ASE v3.0
 
 ### Nightly Planning (00:00)
 - Detects missed tasks from previous day
-- Strategic tasks: redistribution algorithm (compaction scheduling)
-- Regular tasks: increment skip counter → check goal failure conditions
-- Resets fatigue; plans tomorrow using Google Calendar free slots
+- Missed strategic tasks → added to "missed" list displayed on Today page; **no redistribution** (plan is fixed after goal creation)
+- Missed regular tasks → increment `cumulative_skips` counter → check failure threshold (≥3 → task FAILED)
+- Resets fatigue; syncs tomorrow's tasks to Google Calendar free slots
 - Applies interleaving rules across goals and fatigue types
 
 ### Goal Failure Conditions
-- 3 consecutive skips of same regular task → goal failed
-- 20% total skip rate for any regular task in goal → goal failed
-- On failure: strategic progress + notes preserved; regular progress reset; system offers new goal creation based on failed one
+- 3 **cumulative** skips of the same regular task → task FAILED (skill not formed)
+- Failed regular task → quest FAILED (edge case; overrides the 70% progress rule)
+- Quest FAILED if: any regular task has 3+ cumulative skips **OR** quest progress < 70% at goal end
+- Goal FAILED if: any quest is failed
+- On failure: strategic task progress + notes preserved; regular task progress reset; system offers to create a new goal based on the failed one
 
 ### Retrospective (weekly, wizard-style modal)
 - Page 1: aggregate stats + fatigue pattern question
@@ -47,6 +49,18 @@ SoloLeveling v2 is a PWA for goal planning and achievement based on the ASE v3.0
 - Structure: `@me/` (6 profile files + patterns.md), `{sphere}/sphere.md`, `{sphere}/{goal}/goal.md`, `{sphere}/{goal}/{note}.md`
 - Three-panel UI: file tree (left), rendered markdown + backlinks (center), RAG chat (right)
 - RAG: pgvector semantic search, wikilinks graph traversal, 2-level context depth
+
+### Plan Generation Algorithm (6 phases)
+Triggered when user confirms goal creation. Runs before calendar sync.
+
+- **A — AI dialog:** gathers goal context via structured interview → generates 3–5 quests → each quest decomposed into 1–4 sequential milestones → each milestone has 1–3 strategic tasks + 0–1 regular task
+- **B — Calendar scan:** fetch 90-day free/busy from Google Calendar (batched by week = 13 requests); apply user's `activity_window`; split each day into morning sub-window (first 4h) and afternoon sub-window (remainder); apply fill factor 0.75 (never schedule > 75% of free time)
+- **C — Feasibility check:** `total_required_minutes` (sum of all task durations) vs `total_available_minutes × 0.75`
+  - Overflow 0–30%: remove one whole quest (lowest priority), warn user
+  - Overflow > 30%: block confirmation, warn user to free calendar or drop active goals
+- **D — Calendar-aware date resolution:** assign each task to its Ebbinghaus `ideal_date`; if that day is blocked, slide within tolerance (±3 days for strategic, ±2 days for regular) inside milestone window; unplaceable tasks → overflow warning
+- **E — Distribution check:** if `max(week_load) > 3 × min(week_load)`, rebalance within Ebbinghaus tolerance
+- **F — Within-day scheduling:** intellectual tasks → morning sub-window; physical → afternoon/evening; emotional → any; `computeTaskStartTimes()` places tasks in free slots with break gaps; create Google Calendar events
 
 ### Google Calendar Integration
 - Mandatory connection during onboarding (OAuth 2.0, read/write)
@@ -125,8 +139,8 @@ Dark gothic minimalism. Full spec in `./design/`:
 - Goals: always 90 days, no extensions, no reformulation after creation
 - Tasks: only today's tasks can be executed (no past/future)
 - Regular tasks: fixed spaced repetition schedule (Ebbinghaus: 1,2,4,7,14,30,60 days), never rescheduled
-- Strategic tasks: must complete with a note; missed ones go through compaction algorithm
-- Goal failure: 3 consecutive skips OR 20% total skip rate of any single regular task
-- Nightly logic: 00:00 processes all users; reset fatigue, plan tomorrow, run compaction
+- Strategic tasks: must complete with a note; missed ones go to the "missed" list on Today page (no rescheduling)
+- Goal failure: task FAILED after 3 cumulative skips → quest FAILED → goal FAILED; or quest progress < 70% at end
+- Nightly logic: 00:00 processes all users; reset fatigue, mark missed tasks, sync tomorrow to calendar
 - Retrospective: by schedule only (weekly), not on demand
 - Calendar: mandatory; without it system cannot slot tasks

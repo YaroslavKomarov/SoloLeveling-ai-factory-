@@ -110,7 +110,7 @@ export type SphereUpdate = Partial<Omit<SphereRow, 'id' | 'user_id' | 'created_a
 // --- Goals ---
 
 export type GoalType = 'skill' | 'knowledge'
-export type GoalStatus = 'active' | 'completed' | 'failed' | 'cancelled'
+export type GoalStatus = 'planning' | 'active' | 'completed' | 'failed' | 'cancelled'
 
 export interface GoalRow {
   id: string
@@ -122,6 +122,7 @@ export interface GoalRow {
   status: GoalStatus
   start_date: string   // ISO date YYYY-MM-DD
   end_date: string     // always start_date + 90 days
+  planning_started_at: string | null  // set when status → 'planning', cleared when → 'active'
   failed_at: string | null
   failure_reason: string | null
   is_at_risk: boolean
@@ -130,10 +131,11 @@ export interface GoalRow {
   updated_at: string
 }
 
-export type GoalInsert = Omit<GoalRow, 'id' | 'created_at' | 'updated_at'> & {
+export type GoalInsert = Omit<GoalRow, 'id' | 'created_at' | 'updated_at' | 'description' | 'status' | 'start_date' | 'planning_started_at' | 'failed_at' | 'failure_reason'> & {
   description?: string | null
   status?: GoalStatus
   start_date?: string
+  planning_started_at?: string | null
   failed_at?: string | null
   failure_reason?: string | null
 }
@@ -405,6 +407,73 @@ export interface BehaviorPatternRow {
 
 export type BehaviorPatternUpsert = Omit<BehaviorPatternRow, 'id' | 'detected_at'>
 
+// =============================================================
+// Milestone 0: Plan Generation Queue types
+// =============================================================
+
+export type PlanGenerationPhase =
+  | 'dialog'          // Phase A: AI interview
+  | 'calendar_scan'   // Phase B: fetch 90-day free/busy
+  | 'feasibility'     // Phase C: check overflow
+  | 'date_resolution' // Phase D: assign Ebbinghaus dates
+  | 'distribution'    // Phase E: rebalance weekly load
+  | 'scheduling'      // Phase F: within-day slot assignment
+  | 'done'
+
+export type PlanGenerationStatus = 'pending' | 'processing' | 'completed' | 'failed'
+
+export interface PlanGenerationQueueRow {
+  id: string
+  user_id: string
+  sphere_id: string
+  goal_id: string | null  // null until goal is created (after Phase A)
+  phase: PlanGenerationPhase
+  status: PlanGenerationStatus
+  payload: Record<string, unknown>  // phase-specific intermediate data
+  error_message: string | null
+  retry_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type PlanGenerationQueueInsert = Omit<PlanGenerationQueueRow, 'id' | 'created_at' | 'updated_at' | 'goal_id' | 'status' | 'payload' | 'error_message' | 'retry_count'> & {
+  goal_id?: string | null
+  status?: PlanGenerationStatus
+  payload?: Record<string, unknown>
+  error_message?: string | null
+  retry_count?: number
+}
+
+export type PlanGenerationQueueUpdate = Partial<Omit<PlanGenerationQueueRow, 'id' | 'user_id' | 'sphere_id' | 'created_at'>>
+
+// =============================================================
+// Milestone 0: Task Template types
+// =============================================================
+
+export interface TaskTemplateRow {
+  id: string
+  user_id: string | null  // null = system template (visible to all users)
+  title: string
+  task_type: TaskType
+  fatigue_type: FatigueType
+  duration_minutes: number
+  description: string     // step-by-step guidance
+  xp_reward: number
+  fatigue_cost: number
+  tags: string[]
+  is_system: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type TaskTemplateInsert = Omit<TaskTemplateRow, 'id' | 'created_at' | 'updated_at' | 'user_id' | 'tags' | 'is_system'> & {
+  user_id?: string | null
+  tags?: string[]
+  is_system?: boolean
+}
+
+export type TaskTemplateUpdate = Partial<Omit<TaskTemplateRow, 'id' | 'user_id' | 'created_at'>>
+
 export interface Database {
   public: {
     Tables: {
@@ -487,6 +556,16 @@ export interface Database {
         Row: GoalChatMessageRow
         Insert: GoalChatMessageInsert
         Update: Partial<Omit<GoalChatMessageRow, 'id' | 'session_id' | 'user_id' | 'created_at'>>
+      }
+      plan_generation_queue: {
+        Row: PlanGenerationQueueRow
+        Insert: PlanGenerationQueueInsert
+        Update: PlanGenerationQueueUpdate
+      }
+      task_templates: {
+        Row: TaskTemplateRow
+        Insert: TaskTemplateInsert
+        Update: TaskTemplateUpdate
       }
     }
     Functions: Record<string, never>
