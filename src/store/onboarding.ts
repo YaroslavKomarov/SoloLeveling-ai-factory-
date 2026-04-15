@@ -1,30 +1,56 @@
 import { create } from 'zustand'
+import type { ActivityPeriodRow } from '@/lib/supabase/types'
 
-export interface OnboardingData {
-  displayName: string
-  timezone: string
-  activityWindowStart: string
-  activityWindowEnd: string
-  calendarConnected: boolean
-  retrospectiveDay: number
-  retrospectiveTime: string
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
 }
 
+export type OnboardingPhase =
+  | 'welcome'
+  | 'profile'
+  | 'schedulerbot'
+  | 'spheres'
+  | 'push'
+  | 'complete'
+
 interface OnboardingState {
-  currentStep: number
-  data: Partial<OnboardingData>
-  advance: () => void
-  goBack: () => void
-  setData: (partial: Partial<OnboardingData>) => void
+  messages: ChatMessage[]
+  isStreaming: boolean
+  streamingContent: string
+  phase: OnboardingPhase
+  periods: ActivityPeriodRow[]
+
+  // actions
+  addMessage: (msg: ChatMessage) => void
+  setStreaming: (isStreaming: boolean, content: string) => void
+  setPhase: (phase: OnboardingPhase) => void
+  setPeriods: (periods: ActivityPeriodRow[]) => void
   reset: () => void
 }
 
-export const useOnboardingStore = create<OnboardingState>((set) => ({
-  currentStep: 1,
-  data: {},
+const initialState = {
+  messages: [],
+  isStreaming: false,
+  streamingContent: '',
+  phase: 'welcome' as OnboardingPhase,
+  periods: [],
+}
 
-  advance: () => set((state) => ({ currentStep: state.currentStep + 1 })),
-  goBack: () => set((state) => ({ currentStep: Math.max(1, state.currentStep - 1) })),
-  setData: (partial) => set((state) => ({ data: { ...state.data, ...partial } })),
-  reset: () => set({ currentStep: 1, data: {} }),
+export const useOnboardingStore = create<OnboardingState>((set) => ({
+  ...initialState,
+
+  addMessage: (msg) =>
+    set((state) => ({ messages: [...state.messages, msg] })),
+
+  setStreaming: (isStreaming, content) =>
+    set({ isStreaming, streamingContent: content }),
+
+  setPhase: (phase) => set({ phase }),
+
+  setPeriods: (periods) => set({ periods }),
+
+  reset: () => set(initialState),
 }))

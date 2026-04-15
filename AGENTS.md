@@ -34,6 +34,7 @@ SoloLeveling v2 is a PWA for goal planning and achievement using the ASE v3.0 me
 | 7a | Skill Tree (tree/list visualization with d3-like layout) | ✅ Complete |
 | 7b | Polish (PWA, Web Push notifications, animation polish) | ✅ Complete |
 | — | Dashboard Redesign (Command Center with live stats) | ✅ Complete |
+| A | Onboarding v2 (chat-based flow, SchedulerBot, activity_periods) | ✅ Complete |
 
 ## Project Structure (actual)
 
@@ -46,8 +47,8 @@ SoloLevelingAiFactory/
 │   │   │   ├── login/page.tsx                          # Email/password + Google OAuth
 │   │   │   ├── register/page.tsx
 │   │   │   └── onboarding/
-│   │   │       ├── page.tsx                            # 5-step wizard controller
-│   │   │       └── actions.ts                          # Server Actions for onboarding
+│   │   │       ├── page.tsx                            # Chat-based onboarding (renders OnboardingChat)
+│   │   │       └── actions.ts                          # completeOnboardingAction, subscribeToPushAction
 │   │   ├── app/                                        # Protected app layout (nav + userpanel)
 │   │   │   ├── layout.tsx                              # Fetches user data server-side
 │   │   │   ├── dashboard/page.tsx                      # Command Center (server component, parallel fetch)
@@ -77,7 +78,12 @@ SoloLevelingAiFactory/
 │   │   │   │   ├── daily-planner/route.ts              # POST → stream daily plan
 │   │   │   │   ├── goal-generator/route.ts             # POST → stream goal + quests + tasks
 │   │   │   │   ├── knowledge-rag/route.ts              # POST → stream RAG answer
-│   │   │   │   └── retrospective-analyzer/route.ts     # POST → stream retro analysis
+│   │   │   │   ├── retrospective-analyzer/route.ts     # POST → stream retro analysis
+│   │   │   │   └── onboarding/route.ts                 # POST → stream onboarding agent (auth required)
+│   │   │   ├── schedulerbot/
+│   │   │   │   ├── token/route.ts                      # GET → get/generate connection token (auth required)
+│   │   │   │   ├── webhook/route.ts                    # POST → receive activity periods (token auth)
+│   │   │   │   └── status/route.ts                     # GET → { connected, periods } (auth required)
 │   │   │   ├── goals/
 │   │   │   │   ├── confirm/route.ts                    # POST → confirm generated goal
 │   │   │   │   └── [goalId]/
@@ -130,11 +136,7 @@ SoloLevelingAiFactory/
 │   │   │   ├── ActiveGoalsCard.tsx                     # Per-goal: completion rate, days left, at-risk
 │   │   │   └── RetrospectiveAlertCard.tsx              # Purple alert when retro is pending
 │   │   ├── onboarding/
-│   │   │   ├── WelcomeStep.tsx                         # Step 1: Animated welcome
-│   │   │   ├── ProfileSetupStep.tsx                    # Step 2: Name + timezone + activity window
-│   │   │   ├── CalendarStep.tsx                        # Step 3: Google Calendar connect (mandatory)
-│   │   │   ├── RetroScheduleStep.tsx                   # Step 4: Day + time for weekly retro
-│   │   │   └── CompleteStep.tsx                        # Step 5: Done → Dashboard or New Sphere
+│   │   │   └── OnboardingChat.tsx                      # Full-screen chat UI: streaming + SchedulerBot block + push
 │   │   ├── goals/
 │   │   │   ├── SphereCard.tsx                          # Sphere card with goal count
 │   │   │   ├── GoalCard.tsx                            # Goal card: status, progress, days left
@@ -182,8 +184,8 @@ SoloLevelingAiFactory/
 │   │   │   ├── oauth.ts                                # generateAuthUrl, exchangeCodeForTokens
 │   │   │   └── client.ts                               # getCalendarEvents (Google Calendar API)
 │   │   ├── me-profile/
-│   │   │   ├── templates.ts                            # Markdown generators for 6 @me files
-│   │   │   └── initialize.ts                           # initializeUserProfile → creates notes in DB
+│   │   │   ├── templates.ts                            # Sparse stub generators for 4 @me files (profile/projects/schedule/periodic) + patterns
+│   │   │   └── initialize.ts                           # initializeUserProfile(supabase, userId) → creates 5 notes in DB
 │   │   ├── settings/
 │   │   │   └── actions.ts                              # updateProfileSettings, updateRetroSettings
 │   │   ├── tasks/
@@ -198,6 +200,10 @@ SoloLevelingAiFactory/
 │   │   │   ├── variants.ts                            # Framer Motion: fadeInUp, stagger, scaleIn, etc.
 │   │   │   └── useMotionSafe.ts                       # Hook: returns variants or {} (reduced motion)
 │   │   ├── agents/
+│   │   │   ├── onboarding/
+│   │   │   │   ├── prompt.ts                          # System prompt: 5-phase chat flow with UI markers
+│   │   │   │   ├── tools.ts                           # Tool factories: save_profile_section, create_sphere, request_push_permission, complete_onboarding
+│   │   │   │   └── index.ts                           # runOnboardingAgent() — streaming entry point (Sonnet 4.6)
 │   │   │   ├── goal-generator/
 │   │   │   │   ├── prompt.ts                          # System prompt for goal-generator
 │   │   │   │   ├── context.ts                         # Build context from user profile + active goals
@@ -236,11 +242,12 @@ SoloLevelingAiFactory/
 │   │       ├── spheres.ts                             # Sphere CRUD, getSpheresByUser
 │   │       ├── notes.ts                               # Note CRUD: createNote, getNoteByPath, etc.
 │   │       ├── retrospectives.ts                      # Retro CRUD: getCurrentRetro, createRetro, etc.
+│   │       ├── activity-periods.ts                    # ActivityPeriod CRUD: create, getByUser, deleteByUser
 │   │       └── index.ts                               # Barrel export
 │   ├── middleware.ts                                   # Route protection: /app/* auth + onboarding guard
 │   ├── store/
 │   │   ├── user.ts                                    # Zustand: level, xp, xpToNext, fatigue (3 types)
-│   │   ├── onboarding.ts                              # Zustand: currentStep, data
+│   │   ├── onboarding.ts                              # Zustand: messages, isStreaming, phase, periods (chat-based)
 │   │   ├── goals.ts                                   # Zustand: spheres, goals, generation state
 │   │   ├── goal-dialog.ts                             # Zustand: goal creation dialog messages + phases
 │   │   ├── goal-expert.ts                             # Zustand: expert chat sessions, messages, streaming
@@ -266,7 +273,8 @@ SoloLevelingAiFactory/
 │   │   ├── 006_knowledge_base.sql       # notes wikilinks/tags/embeddings schema
 │   │   ├── 007_push_notifications.sql   # push_subscriptions table
 │   │   ├── 008_retrospectives.sql       # retrospectives, retro_adjustments
-│   │   └── 009_task_fatigue_type.sql    # fatigue_type column on tasks (physical/emotional/intellectual)
+│   │   ├── 009_task_fatigue_type.sql    # fatigue_type column on tasks (physical/emotional/intellectual)
+│   │   └── 019_activity_periods.sql     # activity_periods table, schedulerbot_token/connected on users, period_id on spheres
 │   └── functions/
 │       ├── nightly-planning/index.ts    # Edge Function: 00:00 cron — skip detection, redistribution, fatigue reset
 │       └── embedding-worker/index.ts    # Edge Function: process embedding_queue → pgvector
@@ -320,6 +328,7 @@ SoloLevelingAiFactory/
 
 | Agent | Route | Lib | Model |
 |-------|-------|-----|-------|
+| onboarding | `src/app/api/agents/onboarding/route.ts` | `src/lib/agents/onboarding/` | Sonnet 4.6 |
 | goal-generator | `src/app/api/agents/goal-generator/route.ts` | `src/lib/agents/goal-generator/` | Sonnet 4.6 |
 | goal-expert | `src/app/api/goals/[goalId]/chat/[sessionId]/route.ts` | `src/lib/agents/goal-expert/` | Sonnet 4.6 |
 | daily-planner | `src/app/api/agents/daily-planner/route.ts` | `src/lib/agents/daily-planner/` | Haiku 4.5 |
