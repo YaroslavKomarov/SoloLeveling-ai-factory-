@@ -58,7 +58,7 @@ export async function subscribeToPushAction(
           p256dh: subscription.keys?.p256dh ?? null,
           auth: subscription.keys?.auth ?? null,
         },
-        { onConflict: 'user_id,endpoint' }
+        { onConflict: 'endpoint' }
       )
 
     if (error) {
