@@ -116,7 +116,9 @@ export type SphereUpdate = Partial<Omit<SphereRow, 'id' | 'user_id' | 'created_a
 // --- Goals ---
 
 export type GoalType = 'skill' | 'knowledge'
-export type GoalStatus = 'planning' | 'active' | 'completed' | 'failed' | 'cancelled'
+export type GoalStatus =
+  | 'planning' | 'active' | 'completed' | 'failed' | 'cancelled'  // legacy
+  | 'planned' | 'completed_on_time' | 'missed'                     // v2
 
 export interface GoalRow {
   id: string
@@ -128,6 +130,7 @@ export interface GoalRow {
   status: GoalStatus
   start_date: string   // ISO date YYYY-MM-DD
   end_date: string     // always start_date + 90 days
+  deadline_date: string | null   // ISO date. User's desired deadline (not enforced).
   planning_started_at: string | null  // set when status → 'planning', cleared when → 'active'
   failed_at: string | null
   failure_reason: string | null
@@ -137,10 +140,11 @@ export interface GoalRow {
   updated_at: string
 }
 
-export type GoalInsert = Omit<GoalRow, 'id' | 'created_at' | 'updated_at' | 'description' | 'status' | 'start_date' | 'planning_started_at' | 'failed_at' | 'failure_reason'> & {
+export type GoalInsert = Omit<GoalRow, 'id' | 'created_at' | 'updated_at' | 'description' | 'status' | 'start_date' | 'planning_started_at' | 'failed_at' | 'failure_reason' | 'deadline_date'> & {
   description?: string | null
   status?: GoalStatus
   start_date?: string
+  deadline_date?: string | null
   planning_started_at?: string | null
   failed_at?: string | null
   failure_reason?: string | null
@@ -184,7 +188,8 @@ export interface TaskRow {
   title: string
   task_type: TaskType
   status: TaskStatus
-  scheduled_date: string   // ISO date YYYY-MM-DD
+  scheduled_date: string | null  // nullable: null for queue-based tasks
+  order_index: number            // queue position within goal (0 = first)
   completed_at: string | null
   xp_reward: number
   fatigue_cost: number
@@ -205,6 +210,8 @@ export interface TaskRow {
 export type TaskInsert = Omit<TaskRow, 'id' | 'created_at' | 'updated_at'> & {
   quest_id?: string | null
   status?: TaskStatus
+  scheduled_date?: string | null
+  order_index?: number
   completed_at?: string | null
   xp_reward?: number
   fatigue_cost?: number
@@ -495,6 +502,53 @@ export interface ActivityPeriodRow {
 }
 
 export type ActivityPeriodInsert = Omit<ActivityPeriodRow, 'id' | 'created_at'>
+
+// =============================================================
+// Milestone B: Queue model types
+// =============================================================
+
+// Re-export for backward compat — defined in spaced-repetition.ts
+export type { GoalPlanResult, GoalPlanInput } from '@/lib/tasks/spaced-repetition'
+
+/** One entry in the queue-based task plan (pre-insert, Веха B+) */
+export interface QueueTaskEntry {
+  questIndex: number
+  title: string
+  taskType: TaskType
+  orderIndex: number         // queue position (1-based)
+  xpReward: number
+  fatigueCost: number
+  fatigueType?: FatigueType
+  repetitionIndex?: number   // regular tasks only
+  sequenceIndex?: number     // strategic tasks only
+  description?: string
+  durationMinutes: number
+}
+
+export interface QueuePlanInput {
+  goalType: GoalType
+  quests: QuestDraft[]
+}
+
+export interface QueuePlanResult {
+  tasks: QueueTaskEntry[]
+  totalTasks: number
+  totalMinutes: number
+}
+
+export interface FeasibilityParams {
+  activityPeriod: Pick<ActivityPeriodRow, 'days_of_week' | 'start_time' | 'end_time'>
+  totalTaskMinutes: number
+  targetDeadlineDate: string  // ISO date
+}
+
+export interface FeasibilityResult {
+  weeklyMinutes: number
+  weeksNeeded: number
+  weeksAvailable: number
+  isFeasible: boolean
+  estimatedCompletionWeeks: number
+}
 
 export interface Database {
   public: {

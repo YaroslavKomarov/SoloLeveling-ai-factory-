@@ -25,32 +25,24 @@ export async function createTasks(supabase: DB, tasks: TaskInsert[]): Promise<Ta
     return []
   }
 
-  const firstDate = tasks[0]?.scheduled_date
-  const lastDate = tasks[tasks.length - 1]?.scheduled_date
   logger.debug('createTasks', {
     count: tasks.length,
     goalId: tasks[0]?.goal_id,
-    firstScheduledDate: firstDate,
-    lastScheduledDate: lastDate,
+    hasOrderIndex: tasks[0]?.order_index !== undefined,
   })
 
   const { data, error } = await supabase
     .from('tasks')
     .insert(tasks)
     .select()
-    .order('scheduled_date')
+    .order('order_index')
 
   if (error) {
     logger.error('createTasks failed', { goalId: tasks[0]?.goal_id, count: tasks.length, error: error.message })
     throw new Error(`createTasks: ${error.message}`)
   }
 
-  logger.debug('tasks created', {
-    count: data.length,
-    goalId: data[0]?.goal_id,
-    firstDate: data[0]?.scheduled_date,
-    lastDate: data[data.length - 1]?.scheduled_date,
-  })
+  logger.debug('tasks created', { count: data.length, goalId: data[0]?.goal_id })
   return data
 }
 
@@ -290,6 +282,28 @@ export async function updateTaskStatus(
   }
 
   logger.debug('task status updated', { id, status: data.status })
+  return data
+}
+
+/**
+ * Returns tasks for a goal ordered by order_index (queue order).
+ * Use for queue-based goals (Веха B+). For date-based access use getTasksByGoal.
+ */
+export async function getTasksByGoalOrdered(supabase: DB, goalId: string): Promise<TaskRow[]> {
+  logger.debug('getTasksByGoalOrdered', { goalId })
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .select()
+    .eq('goal_id', goalId)
+    .order('order_index', { ascending: true })
+
+  if (error) {
+    logger.error('getTasksByGoalOrdered failed', { goalId, error: error.message })
+    throw new Error(`getTasksByGoalOrdered: ${error.message}`)
+  }
+
+  logger.debug('getTasksByGoalOrdered', { goalId, count: data.length })
   return data
 }
 
