@@ -39,30 +39,25 @@ vi.mock('@/lib/supabase/spheres', () => ({
   getSphereById: vi.fn(),
 }))
 
-// Mock calendar modules (not relevant to constraint test)
-vi.mock('@/lib/calendar/encryption', () => ({
-  decryptToken: vi.fn(),
-  encryptToken: vi.fn(),
-}))
-vi.mock('@/lib/calendar/oauth', () => ({
-  refreshAccessToken: vi.fn(),
-}))
-vi.mock('@/lib/calendar/event-sync', () => ({
-  createTaskEvent: vi.fn(),
-}))
+// Mock next/server after() to run callbacks synchronously
+vi.mock('next/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('next/server')>()
+  return {
+    ...actual,
+    after: vi.fn((fn: () => Promise<void>) => { void fn() }),
+  }
+})
 
 import { createClient } from '@/lib/supabase/server'
 import { getActiveGoalBySphere, createGoal, createQuests, clearDialogMessages } from '@/lib/supabase/goals'
 import { createTasks } from '@/lib/supabase/tasks'
+import { getSphereById } from '@/lib/supabase/spheres'
+import { createNote } from '@/lib/supabase/notes'
 import { POST } from '@/app/api/goals/confirm/route'
 import type { GoalRow, QuestRow, TaskRow } from '@/lib/supabase/types'
 
 const TODAY = new Date().toISOString().slice(0, 10)
-const END_DATE = (() => {
-  const d = new Date(TODAY)
-  d.setUTCDate(d.getUTCDate() + 90)
-  return d.toISOString().slice(0, 10)
-})()
+const END_DATE = TODAY  // kept for GoalRow fixture only
 
 function makeGoalRow(overrides: Partial<GoalRow> = {}): GoalRow {
   return {
@@ -75,6 +70,8 @@ function makeGoalRow(overrides: Partial<GoalRow> = {}): GoalRow {
     status: 'active',
     start_date: TODAY,
     end_date: END_DATE,
+    deadline_date: null,
+    planning_started_at: null,
     failed_at: null,
     failure_reason: null,
     is_at_risk: false,
@@ -112,22 +109,20 @@ const VALID_BODY = {
   sphereId: 'sphere-1',
   goalType: 'skill',
   title: 'New Goal',
-  quests: [{ title: 'Quest 1', targetValue: 10, unit: 'sessions' }],
+  quests: [{ title: 'Quest 1', targetValue: 10, unit: 'sessions', orderIndex: 0, milestones: [] }],
   tasks: [
     {
+      questIndex: 0,
       title: 'Task 1',
       taskType: 'regular',
-      scheduledDate: TODAY,
+      orderIndex: 1,
       xpReward: 50,
       fatigueCost: 4,
       fatigueType: 'intellectual',
-      questIndex: 0,
-      repetitionIndex: 1,
-      sequenceIndex: null,
+      repetitionIndex: 0,
+      durationMinutes: 10,
     },
   ],
-  startDate: TODAY,
-  endDate: END_DATE,
 }
 
 function makeSupabaseMock(userId = 'user-1') {
@@ -135,14 +130,6 @@ function makeSupabaseMock(userId = 'user-1') {
     auth: {
       getUser: vi.fn().mockResolvedValue({ data: { user: { id: userId } }, error: null }),
     },
-    from: vi.fn().mockReturnValue({
-      select: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue({
-          single: vi.fn().mockResolvedValue({ data: { calendar_connected_at: null }, error: null }),
-          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-        }),
-      }),
-    }),
   }
 }
 
@@ -158,6 +145,18 @@ describe('POST /api/goals/confirm — one active goal per sphere constraint', ()
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(createClient).mockResolvedValue(makeSupabaseMock() as never)
+    vi.mocked(getSphereById).mockResolvedValue({
+      id: 'sphere-1',
+      user_id: 'user-1',
+      name: 'Learning',
+      description: null,
+      icon: '📚',
+      order_index: 0,
+      period_id: null,
+      created_at: TODAY,
+      updated_at: TODAY,
+    })
+    vi.mocked(createNote).mockResolvedValue({} as never)
   })
 
   it('returns 409 ACTIVE_GOAL_EXISTS when sphere already has an active goal', async () => {

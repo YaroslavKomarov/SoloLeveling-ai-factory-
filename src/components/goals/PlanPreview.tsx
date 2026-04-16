@@ -1,68 +1,50 @@
 'use client'
 
-import type { GoalPlanResult } from '@/lib/supabase/types'
+import { createLogger } from '@/lib/logger'
+import type { QueuePlanResult, FeasibilityResult } from '@/lib/supabase/types'
+
+const logger = createLogger('PlanPreview')
 
 interface PlanPreviewProps {
-  planResult: GoalPlanResult
-  startDate: string
-}
-
-function addDays(isoDate: string, days: number): string {
-  const d = new Date(isoDate)
-  d.setUTCDate(d.getUTCDate() + days)
-  return d.toISOString().slice(0, 10)
+  planResult: QueuePlanResult
+  deadlineDate?: string | null
+  feasibility?: FeasibilityResult | null
 }
 
 function formatDate(iso: string): string {
   const d = new Date(iso)
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
-export function PlanPreview({ planResult, startDate }: PlanPreviewProps) {
-  const { tasks, fatigueProjection, loadViolationDays } = planResult
+export function PlanPreview({ planResult, deadlineDate, feasibility }: PlanPreviewProps) {
+  const { tasks } = planResult
+
+  logger.debug('PlanPreview render', {
+    questCount: tasks.length,
+    feasible: feasibility?.isFeasible,
+  })
 
   const regularCount = tasks.filter(t => t.taskType === 'regular').length
   const strategicCount = tasks.filter(t => t.taskType === 'strategic').length
-  const totalXp = tasks.reduce((sum, t) => sum + t.xpReward, 0)
+  const totalMinutes = planResult.totalMinutes
 
-  // Build day map: ISO date → { taskCount, maxFatigue }
-  const dayMap = new Map<string, { taskCount: number; maxFatigue: number }>()
-
-  for (let i = 0; i < 90; i++) {
-    const date = addDays(startDate, i)
-    dayMap.set(date, { taskCount: 0, maxFatigue: 0 })
-  }
-
+  // Group tasks by questIndex for KR breakdown
+  const questGroups = new Map<number, { strategic: number; regular: number; xp: number }>()
   for (const task of tasks) {
-    const existing = dayMap.get(task.scheduledDate)
-    if (existing) {
-      existing.taskCount += 1
-    }
+    const entry = questGroups.get(task.questIndex) ?? { strategic: 0, regular: 0, xp: 0 }
+    if (task.taskType === 'strategic') entry.strategic++
+    else entry.regular++
+    entry.xp += task.xpReward
+    questGroups.set(task.questIndex, entry)
   }
 
-  for (const proj of fatigueProjection) {
-    const existing = dayMap.get(proj.date)
-    if (existing) {
-      existing.maxFatigue = Math.max(proj.physical, proj.emotional, proj.intellectual)
+  // Build quest titles from first task of each quest index
+  const questTitles = new Map<number, string>()
+  for (const task of tasks) {
+    if (!questTitles.has(task.questIndex)) {
+      // Task titles don't carry the quest title, use "KR N"
+      questTitles.set(task.questIndex, `KR${task.questIndex + 1}`)
     }
-  }
-
-  const violationSet = new Set(loadViolationDays)
-
-  // 90 days as array
-  const days = Array.from({ length: 90 }, (_, i) => {
-    const date = addDays(startDate, i)
-    const info = dayMap.get(date) ?? { taskCount: 0, maxFatigue: 0 }
-    return { date, ...info, isViolation: violationSet.has(date) }
-  })
-
-  // Color by task count
-  function dayColor(taskCount: number, isViolation: boolean): string {
-    if (isViolation) return 'rgba(251, 191, 36, 0.5)'  // amber warning
-    if (taskCount === 0) return 'rgba(255,255,255,0.04)'
-    if (taskCount === 1) return 'rgba(255,255,255,0.15)'
-    if (taskCount === 2) return 'rgba(255,255,255,0.28)'
-    return 'rgba(255,255,255,0.45)'
   }
 
   return (
@@ -77,9 +59,9 @@ export function PlanPreview({ planResult, startDate }: PlanPreviewProps) {
       >
         {[
           { label: 'Total Tasks', value: tasks.length },
-          { label: 'Regular', value: regularCount },
           { label: 'Strategic', value: strategicCount },
-          { label: 'XP Potential', value: totalXp.toLocaleString() },
+          { label: 'Regular', value: regularCount },
+          { label: 'Est. Minutes', value: totalMinutes.toLocaleString() },
         ].map(({ label, value }) => (
           <div
             key={label}
@@ -102,69 +84,76 @@ export function PlanPreview({ planResult, startDate }: PlanPreviewProps) {
         ))}
       </div>
 
-      {/* Calendar grid */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontFamily: 'Cinzel, serif', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.4)' }}>
-            90-Day Schedule
-          </span>
-          {loadViolationDays.length > 0 && (
-            <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.8125rem', color: 'rgba(251,191,36,0.8)' }}>
-              {loadViolationDays.length} high-load day{loadViolationDays.length !== 1 ? 's' : ''} detected
+      {/* Deadline + Feasibility row */}
+      <div style={{
+        padding: '0.625rem 0.875rem',
+        border: '1px solid rgba(255,255,255,0.08)',
+        backgroundColor: 'rgba(26,31,46,0.3)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.25rem',
+      }}>
+        <span style={{ fontFamily: 'Cinzel, serif', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)' }}>
+          Deadline
+        </span>
+        {deadlineDate ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: '#ffffff' }}>
+              {formatDate(deadlineDate)}
             </span>
-          )}
-        </div>
+            {feasibility ? (
+              <span style={{
+                fontFamily: 'Cormorant, Georgia, serif',
+                fontSize: '0.875rem',
+                color: feasibility.isFeasible ? 'rgba(74,222,128,0.85)' : 'rgba(251,191,36,0.85)',
+              }}>
+                {feasibility.isFeasible
+                  ? `✓ Feasible — ${feasibility.weeksNeeded} weeks needed, ${feasibility.weeksAvailable} available`
+                  : `⚠ Tight — ${feasibility.weeksNeeded} weeks needed, ${feasibility.weeksAvailable} available`}
+              </span>
+            ) : (
+              <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.875rem', color: 'rgba(255,255,255,0.35)' }}>
+                No period linked — feasibility unavailable
+              </span>
+            )}
+          </div>
+        ) : (
+          <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.875rem', color: 'rgba(255,255,255,0.35)', fontStyle: 'italic' }}>
+            No deadline set
+          </span>
+        )}
+      </div>
 
-        {/* Week header */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
-          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+      {/* KR breakdown */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+        <span style={{ fontFamily: 'Cinzel, serif', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)' }}>
+          Key Results
+        </span>
+        {Array.from(questGroups.entries())
+          .sort(([a], [b]) => a - b)
+          .map(([idx, stats]) => (
             <div
-              key={i}
+              key={idx}
               style={{
-                textAlign: 'center',
-                fontFamily: 'Orbitron, monospace',
-                fontSize: '0.6rem',
-                color: 'rgba(255,255,255,0.25)',
-                padding: '0.25rem 0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.5rem 0.75rem',
+                border: '1px solid rgba(255,255,255,0.08)',
+                backgroundColor: 'rgba(26,31,46,0.3)',
               }}
             >
-              {d}
-            </div>
-          ))}
-        </div>
-
-        {/* Day grid — 90 days in rows of 7 */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
-          {days.map(({ date, taskCount, isViolation }) => (
-            <div
-              key={date}
-              title={`${formatDate(date)}: ${taskCount} task${taskCount !== 1 ? 's' : ''}`}
-              style={{
-                height: '18px',
-                backgroundColor: dayColor(taskCount, isViolation),
-                border: isViolation ? '1px solid rgba(251,191,36,0.4)' : '1px solid transparent',
-                transition: 'background-color 0.15s ease',
-              }}
-            />
-          ))}
-        </div>
-
-        {/* Legend */}
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          {[
-            { color: 'rgba(255,255,255,0.04)', label: 'Rest' },
-            { color: 'rgba(255,255,255,0.15)', label: '1 task' },
-            { color: 'rgba(255,255,255,0.45)', label: '3+ tasks' },
-            { color: 'rgba(251,191,36,0.5)', label: 'High load' },
-          ].map(({ color, label }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
-              <div style={{ width: '12px', height: '12px', backgroundColor: color, border: '1px solid rgba(255,255,255,0.1)' }} />
-              <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.8125rem', color: 'rgba(255,255,255,0.4)' }}>
-                {label}
+              <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: '#ffffff' }}>
+                {questTitles.get(idx) ?? `KR${idx + 1}`}
+              </span>
+              <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.8125rem', color: 'rgba(255,255,255,0.45)' }}>
+                {stats.strategic} strategic + {stats.regular} regular tasks
+                <span style={{ marginLeft: '0.5rem', color: 'rgba(255,255,255,0.25)' }}>
+                  {stats.xp.toLocaleString()} XP
+                </span>
               </span>
             </div>
           ))}
-        </div>
       </div>
     </div>
   )

@@ -24,7 +24,7 @@ type DB = SupabaseClient<Database>
 // =============================================================
 
 export async function createGoal(supabase: DB, insert: GoalInsert): Promise<GoalRow> {
-  logger.debug('createGoal', { userId: insert.user_id, sphereId: insert.sphere_id, title: insert.title })
+  logger.debug('createGoal', { goalType: insert.goal_type, sphereId: insert.sphere_id, hasDeadline: !!insert.deadline_date })
 
   const { data, error } = await supabase
     .from('goals')

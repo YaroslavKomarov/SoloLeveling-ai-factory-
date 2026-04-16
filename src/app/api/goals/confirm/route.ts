@@ -1,48 +1,42 @@
 /**
  * POST /api/goals/confirm
  * Creates a goal + quests + tasks in a single transaction-like sequence.
- * Called from GoalCreationDialog after plan preview is approved.
+ * v2: queue-based tasks (order_index, no calendar), materials → KB notes, deadline_date.
  */
 import { after } from 'next/server'
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { createGoal, createQuests, clearDialogMessages, getActiveGoalBySphere } from '@/lib/supabase/goals'
 import { createTasks } from '@/lib/supabase/tasks'
 import { createNote } from '@/lib/supabase/notes'
 import { getSphereById } from '@/lib/supabase/spheres'
-import { decryptToken, encryptToken } from '@/lib/calendar/encryption'
-import { refreshAccessToken, type OAuthTokens } from '@/lib/calendar/oauth'
-import { createTaskEvent } from '@/lib/calendar/event-sync'
-import { fetchBusyIntervals, findFreeIntervals, computeTaskStartTimes, timeStrToMin, type Interval } from '@/lib/calendar/slot-finder'
 import { createLogger } from '@/lib/logger'
-import type { GoalInsert, GoalType, QuestDraft, QuestInsert, TaskInsert, TaskPlanEntry } from '@/lib/supabase/types'
+import type { GoalInsert, GoalType, QuestDraft, QuestInsert, TaskInsert, QueueTaskEntry } from '@/lib/supabase/types'
 
 const logger = createLogger('api/goals/confirm')
 
 interface ConfirmBody {
   sphereId: string
   goalType: GoalType
-  title: string
+  title?: string
   description?: string
   quests: QuestDraft[]
-  tasks: TaskPlanEntry[]
-  startDate: string
-  endDate: string
+  tasks: QueueTaskEntry[]
+  deadlineDate?: string
+  materials?: Array<{ title: string; content: string; url?: string }>
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as ConfirmBody
-    const { sphereId, goalType, title, description, quests, tasks, startDate, endDate } = body
+    const { sphereId, goalType, title, description, quests, tasks, deadlineDate, materials } = body
 
-    logger.debug('confirm goal request', {
+    logger.info('confirm goal', {
       sphereId,
-      goalType,
-      questCount: quests.length,
-      taskCount: tasks.length,
-      startDate,
-      endDate,
+      questCount: quests?.length ?? 0,
+      taskCount: tasks?.length ?? 0,
+      hasDeadline: !!deadlineDate,
+      materialCount: materials?.length ?? 0,
     })
 
     if (!sphereId || !goalType || !quests?.length || !tasks?.length) {
@@ -56,14 +50,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // 1a. Enforce one active goal per sphere constraint
+    // Enforce one active goal per sphere constraint
     const existingActiveGoal = await getActiveGoalBySphere(supabase, user.id, sphereId)
-    logger.info('[goals/confirm] active goal check', {
-      sphereId,
-      existingGoalId: existingActiveGoal?.id ?? null,
-    })
     if (existingActiveGoal) {
-      logger.warn('[goals/confirm] blocked: active goal exists', {
+      logger.warn('confirm goal: blocked — active goal exists', {
         sphereId,
         existingGoalId: existingActiveGoal.id,
       })
@@ -73,6 +63,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const today = new Date().toISOString().slice(0, 10)
+
     // 1. Create goal
     const goalInsert: GoalInsert = {
       user_id: user.id,
@@ -80,8 +72,9 @@ export async function POST(request: NextRequest) {
       title: title ?? quests[0]?.title ?? 'Untitled Goal',
       description: description ?? null,
       goal_type: goalType,
-      start_date: startDate,
-      end_date: endDate,
+      start_date: today,
+      end_date: today,  // legacy field; not used for queue-based goals
+      deadline_date: deadlineDate ?? null,
     }
 
     const goal = await createGoal(supabase, goalInsert)
@@ -104,186 +97,71 @@ export async function POST(request: NextRequest) {
     // Map questIndex → questId
     const questIdByIndex = new Map(createdQuests.map((q, i) => [i, q.id]))
 
-    // 3. Create tasks
+    // 3. Create tasks with order_index (queue-based, no scheduled_date)
     const taskInserts: TaskInsert[] = tasks.map((t) => {
       const fatigueType = t.fatigueType ?? 'intellectual'
-      if (!t.fatigueType) {
-        logger.warn('fatigue_type missing on task — defaulting to intellectual', {
-          taskTitle: t.title,
-          taskType: t.taskType,
-          questIndex: t.questIndex,
-        })
-      }
-      logger.debug('fatigue_type assigned', {
-        taskTitle: t.title,
-        fatigueType,
-        taskType: t.taskType,
-      })
       return {
         user_id: user.id,
         goal_id: goal.id,
         quest_id: questIdByIndex.get(t.questIndex) ?? null,
         title: t.title,
         task_type: t.taskType,
-        scheduled_date: t.scheduledDate,
+        scheduled_date: null,
+        order_index: t.orderIndex,
         xp_reward: t.xpReward,
         fatigue_cost: t.fatigueCost,
         fatigue_type: fatigueType,
         repetition_index: t.repetitionIndex ?? null,
         sequence_index: t.sequenceIndex ?? null,
         description: t.description ?? null,
-        duration_minutes: t.taskType === 'strategic' ? 27 : 12,
+        duration_minutes: t.durationMinutes,
       }
     })
 
     const createdTasks = await createTasks(supabase, taskInserts)
-    logger.debug('tasks created', { count: createdTasks.length })
+    logger.info('goal confirmed', {
+      goalId: goal.id,
+      questCount: createdQuests.length,
+      taskCount: createdTasks.length,
+    })
 
     // 4. Clear dialog messages for this sphere
     await clearDialogMessages(supabase, user.id, sphereId)
 
-    logger.info('goal confirmed', { goalId: goal.id, userId: user.id, taskCount: taskInserts.length })
-
-    // 5. Auto-create goal.md note after response is sent
+    // 5. Auto-create goal.md note and material notes after response is sent
     after(async () => {
       try {
         const sphere = await getSphereById(supabase, sphereId)
-        const sphereName = sphere?.name ?? 'unknown'
+        const sphereSlug = (sphere?.name ?? 'unknown').toLowerCase().replace(/\s+/g, '-')
+        const goalSlug = goal.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)
         const questChecklist = createdQuests
           .map((q) => `- [ ] ${q.title} (target: ${q.target_value} ${q.unit})`)
           .join('\n')
 
         await createNote(supabase, {
           user_id: user.id,
-          path: `${sphereName}/${goal.title}/goal.md`,
+          path: `domains/${sphereSlug}/${goalSlug}/goal.md`,
           title: goal.title,
-          content: `---\ntype: goal\ngoal_id: ${goal.id}\nsphere_id: ${sphereId}\nstart_date: ${startDate}\nend_date: ${endDate}\n---\n# ${goal.title}\n\n## Key Results\n${questChecklist}\n`,
+          content: `---\ntype: goal\ngoal_id: ${goal.id}\nsphere_id: ${sphereId}\nstart_date: ${today}\ndeadline_date: ${deadlineDate ?? 'none'}\n---\n# ${goal.title}\n\n## Key Results\n${questChecklist}\n`,
         })
-        logger.info('Goal note auto-created', { goalId: goal.id, sphereName, goalTitle: goal.title })
-      } catch (err) {
-        logger.warn('Goal note auto-creation failed (non-blocking)', {
-          goalId: goal.id,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      }
-    })
+        logger.info('Goal note auto-created', { goalId: goal.id, sphereSlug, goalSlug })
 
-    // 6. Sync created tasks to Google Calendar after response is sent (after() ensures Vercel doesn't kill the work early)
-    after(async () => {
-      try {
-        const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY
-        if (!encryptionKey) {
-          logger.warn('[FIX] calendar sync skipped: TOKEN_ENCRYPTION_KEY not set', { goalId: goal.id })
-          return
-        }
-
-        const adminSupabase = createAdminClient()
-        const { data: profile } = await adminSupabase
-          .from('users')
-          .select('calendar_token_encrypted, timezone, activity_window_start, activity_window_end')
-          .eq('id', user.id)
-          .maybeSingle()
-
-        if (!profile?.calendar_token_encrypted) {
-          logger.debug('[FIX] calendar sync skipped: no calendar connected', { userId: user.id, goalId: goal.id })
-          return
-        }
-
-        let tokens = JSON.parse(decryptToken(profile.calendar_token_encrypted, encryptionKey)) as OAuthTokens
-
-        // Refresh token if expired or within 5 min of expiry
-        const expiresAt = new Date(tokens.expiresAt).getTime()
-        if (Date.now() > expiresAt - 5 * 60 * 1000) {
-          if (!tokens.refresh_token) {
-            logger.warn('[FIX] calendar sync skipped: token expired, no refresh token', { userId: user.id })
-            return
-          }
-          logger.info('[FIX] calendar sync: refreshing access token', { userId: user.id })
-          tokens = await refreshAccessToken(tokens.refresh_token)
-          const newEncrypted = encryptToken(JSON.stringify(tokens), encryptionKey)
-          await adminSupabase.from('users').update({ calendar_token_encrypted: newEncrypted }).eq('id', user.id)
-        }
-
-        const timezone = profile.timezone || 'UTC'
-        const activityStart = (profile.activity_window_start as string | null) || '09:00:00'
-        const activityEnd = (profile.activity_window_end as string | null) || '21:00:00'
-        const windowStartMin = timeStrToMin(activityStart)
-        const windowEndMin = timeStrToMin(activityEnd)
-
-        // Group tasks by date to schedule them per day
-        const tasksByDate = new Map<string, typeof createdTasks>()
-        for (const task of createdTasks) {
-          const date = task.scheduled_date
-          if (!tasksByDate.has(date)) tasksByDate.set(date, [])
-          tasksByDate.get(date)!.push(task)
-        }
-
-        let totalSynced = 0
-
-        for (const [dateStr, dateTasks] of tasksByDate) {
-          // Query existing Google Calendar events to avoid overlap
-          let busyIntervals: Interval[] = []
-          try {
-            busyIntervals = await fetchBusyIntervals(tokens.access_token, dateStr)
-            logger.debug('[FIX] calendar sync: busy intervals fetched', {
-              dateStr,
-              busyCount: busyIntervals.length,
-            })
-          } catch (err) {
-            logger.warn('[FIX] calendar sync: fetchBusyIntervals failed, proceeding with empty calendar', {
-              dateStr,
-              error: err instanceof Error ? err.message : String(err),
-            })
-          }
-
-          const freeIntervals = findFreeIntervals(busyIntervals, windowStartMin, windowEndMin)
-          const taskInputs = dateTasks.map((t) => ({
-            duration_minutes: t.duration_minutes ?? (t.task_type === 'strategic' ? 27 : 12),
-          }))
-          const startTimes = computeTaskStartTimes(taskInputs, freeIntervals, windowEndMin)
-
-          logger.debug('[FIX] calendar sync: slots computed', {
-            dateStr,
-            freeIntervalCount: freeIntervals.length,
-            taskCount: dateTasks.length,
-            assignedSlots: startTimes.filter(Boolean).length,
+        // Save materials as KB notes
+        for (let i = 0; i < (materials?.length ?? 0); i++) {
+          const material = materials![i]
+          const materialSlug = material.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30)
+          const path = `domains/${sphereSlug}/${goalSlug}/materials/${i + 1}-${materialSlug}.md`
+          const content = `---\ntitle: "${material.title}"\nurl: ${material.url ?? 'none'}\ndate: ${today}\n---\n\n${material.content}`
+          logger.debug('saving material note', { path, contentLength: content.length })
+          await createNote(supabase, {
+            user_id: user.id,
+            path,
+            title: material.title,
+            content,
           })
-
-          for (let i = 0; i < dateTasks.length; i++) {
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-            const task = dateTasks[i]!
-            const durationMin = task.duration_minutes ?? (task.task_type === 'strategic' ? 27 : 12)
-            // Fall back to activity window start if no slot was found
-            const eventStartStr = startTimes[i] ?? activityStart
-
-            try {
-              const eventId = await createTaskEvent(
-                tokens.access_token,
-                { ...task, duration_minutes: durationMin, description: task.description ?? null },
-                eventStartStr,
-                timezone,
-                goal.title
-              )
-              await adminSupabase.from('tasks').update({ calendar_event_id: eventId }).eq('id', task.id)
-              totalSynced++
-            } catch (err) {
-              logger.error('[FIX] calendar sync: event creation failed for task', {
-                taskId: task.id,
-                scheduledDate: task.scheduled_date,
-                error: err instanceof Error ? err.message : String(err),
-              })
-            }
-          }
         }
-
-        logger.info('[FIX] calendar sync: complete', {
-          goalId: goal.id,
-          userId: user.id,
-          totalTasks: createdTasks.length,
-          synced: totalSynced,
-        })
       } catch (err) {
-        logger.warn('[FIX] calendar sync failed (non-blocking)', {
+        logger.warn('Goal note / materials auto-creation failed (non-blocking)', {
           goalId: goal.id,
           error: err instanceof Error ? err.message : String(err),
         })

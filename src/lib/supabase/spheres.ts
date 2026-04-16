@@ -2,7 +2,7 @@
  * Sphere CRUD operations for the Supabase spheres table.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Database, SphereInsert, SphereRow, SphereUpdate } from './types'
+import type { ActivityPeriodRow, Database, SphereInsert, SphereRow, SphereUpdate } from './types'
 import { createNote } from './notes'
 import { createLogger } from '@/lib/logger'
 
@@ -97,6 +97,30 @@ export async function updateSphere(
   }
 
   logger.debug('sphere updated', { id })
+  return data
+}
+
+/**
+ * Returns the activity period linked to a sphere via sphere.period_id.
+ * Returns null if the sphere has no linked period or if the sphere doesn't belong to the user.
+ */
+export async function getActivityPeriodForSphere(
+  supabase: DB,
+  userId: string,
+  sphereId: string
+): Promise<ActivityPeriodRow | null> {
+  const sphere = await getSphereById(supabase, sphereId)
+  if (!sphere || sphere.user_id !== userId || !sphere.period_id) {
+    logger.warn('getActivityPeriodForSphere: sphere has no linked period', { sphereId })
+    return null
+  }
+  const { data, error } = await supabase
+    .from('activity_periods')
+    .select()
+    .eq('id', sphere.period_id)
+    .maybeSingle()
+  if (error) throw new Error(`getActivityPeriodForSphere: ${error.message}`)
+  logger.debug('getActivityPeriodForSphere', { sphereId, found: !!data })
   return data
 }
 
