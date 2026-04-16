@@ -12,13 +12,13 @@ import { getSmartModel } from '@/lib/ai/provider'
 import { createClient } from '@/lib/supabase/server'
 import { listNotesByPrefix } from '@/lib/supabase/notes'
 import { getGoalsByUser, saveDialogMessage, getDialogMessages, clearDialogMessages, getActiveGoalBySphere } from '@/lib/supabase/goals'
-import { getSphereById } from '@/lib/supabase/spheres'
+import { getSphereById, getActivityPeriodForSphere } from '@/lib/supabase/spheres'
 import { buildContextMessages } from '@/lib/agents/goal-generator/context'
 import {
   GOAL_GENERATOR_SYSTEM_PROMPT,
   buildContextInjection,
 } from '@/lib/agents/goal-generator/prompt'
-import { goalGeneratorTools } from '@/lib/agents/goal-generator/tools'
+import { createGoalGeneratorTools } from '@/lib/agents/goal-generator/tools'
 import type { DialogPhase } from '@/lib/supabase/types'
 import { createLogger } from '@/lib/logger'
 
@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
       phase?: DialogPhase
       forceGenerate?: boolean
       forceToolName?: string
+      materials?: Array<{ url: string; title?: string }>
     }
     sphereId = body.sphereId
     const userMessage: string = body.message
@@ -48,6 +49,7 @@ export async function POST(request: NextRequest) {
       messageLength: userMessage?.length ?? 0,
       forceGenerate,
       forceToolName,
+      hasMaterials: !!body.materials?.length,
     })
 
     if (!sphereId || !userMessage) {
@@ -83,24 +85,25 @@ export async function POST(request: NextRequest) {
       profileLength: userProfile.length,
     })
 
-    // 4. Load active goals count + per-sphere constraint check
+    // 4. Load activity period for feasibility tool
+    const activityPeriod = await getActivityPeriodForSphere(supabase, userId, sphereId)
+    if (!activityPeriod) {
+      logger.warn('goal-generator: sphere has no activity period — feasibility tool unavailable', { sphereId })
+    }
+
+    // 5. Load active goals count + per-sphere constraint check
     const activeGoals = await getGoalsByUser(supabase, userId, 'active')
     const activeGoalsCount = activeGoals.length
     const activeGoalInSphere = await getActiveGoalBySphere(supabase, userId, sphereId)
     const hasActiveGoalInSphere = !!activeGoalInSphere
 
+    logger.debug('goal-generator route', {
+      sphereId,
+      phase,
+      hasMaterials: !!body.materials?.length,
+      hasActivityPeriod: !!activityPeriod,
+    })
     logger.debug('sphere active goal check', { sphereId, hasActiveGoalInSphere, existingGoalId: activeGoalInSphere?.id ?? null })
-
-    // 5. Check calendar connection
-    const { data: userRow } = await supabase
-      .from('users')
-      .select('calendar_connected_at')
-      .eq('id', userId)
-      .single()
-
-    const calendarConnected = !!(userRow?.calendar_connected_at)
-
-    logger.debug('context loaded', { userId, sphereId, activeGoals: activeGoalsCount, calendarConnected })
 
     // 6. Build context messages (with rolling summary if needed)
     // [FIX] Fallback to empty context on network failure so the user can still chat
@@ -112,7 +115,7 @@ export async function POST(request: NextRequest) {
         sphereId,
         userProfile,
         `User has ${activeGoalsCount} active goal(s).`,
-        calendarConnected
+        false  // calendar no longer used in v2 prompt
       )
     } catch (ctxErr) {
       const msg = ctxErr instanceof Error ? ctxErr.message : String(ctxErr)
@@ -146,10 +149,13 @@ export async function POST(request: NextRequest) {
     const contextInjection = buildContextInjection({
       userProfile,
       activeGoalsCount,
-      calendarConnected,
       sphereName: sphere.name,
+      activityPeriod,
       hasActiveGoalInSphere,
     })
+
+    // Build tools bound to the sphere's activity period
+    const tools = createGoalGeneratorTools(activityPeriod)
 
     const systemPrompt = GOAL_GENERATOR_SYSTEM_PROMPT + '\n' + contextInjection
 
@@ -165,8 +171,8 @@ export async function POST(request: NextRequest) {
         model: getSmartModel(),
         system: systemPrompt,
         messages,
-        tools: goalGeneratorTools,
-        toolChoice: { type: 'tool' as const, toolName: forceToolName as keyof typeof goalGeneratorTools },
+        tools,
+        toolChoice: { type: 'tool' as const, toolName: forceToolName as keyof typeof tools },
       })
 
       logger.info('[FIX] generateText result', {
@@ -191,8 +197,8 @@ export async function POST(request: NextRequest) {
           expectedToolName: forceToolName,
           hasInput: toolInput != null,
         })
-        const tool = goalGeneratorTools[rawCall.toolName as keyof typeof goalGeneratorTools]
-          ?? goalGeneratorTools[forceToolName as keyof typeof goalGeneratorTools]
+        const tool = tools[rawCall.toolName as keyof typeof tools]
+          ?? tools[forceToolName as keyof typeof tools]
         if (tool?.execute && toolInput != null) {
           toolResult = await tool.execute(toolInput as never, undefined as never)
         }
@@ -219,7 +225,7 @@ export async function POST(request: NextRequest) {
       model: getSmartModel(),
       system: systemPrompt,
       messages,
-      tools: goalGeneratorTools,
+      tools,
       toolChoice: 'auto',
       stopWhen: stepCountIs(5),
       onFinish: async ({ text, usage }) => {
