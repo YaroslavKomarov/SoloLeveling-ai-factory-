@@ -2,25 +2,29 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Send, RefreshCw } from 'lucide-react'
+import { X, Send, RefreshCw, Link, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Textarea } from '@/components/ui/Input'
 import { PlanPreview } from './PlanPreview'
 import { useGoalDialogStore } from '@/store/goal-dialog'
 import { useGoalsStore } from '@/store/goals'
-import { generateGoalPlan } from '@/lib/tasks/spaced-repetition'
+import { generateTaskQueue } from '@/lib/tasks/queue-generator'
 import { createLogger } from '@/lib/logger'
 import type { QuestDraft } from '@/lib/supabase/types'
 
 const logger = createLogger('GoalCreationDialog')
 
+type Material = { title: string; content: string; url?: string }
+
 export function GoalCreationDialog() {
   const {
     isOpen, sphereId, phase, messages,
     draftQuests, draftGoalType, draftGoalTitle, planResult,
+    deadlineDate, feasibility,
     isLoading, error, synthesisNote, createdGoalId,
     setPhase, addMessage, setStreamingMessage, finalizeStreamingMessage,
     setDraftQuests, setDraftGoalType, setDraftGoalTitle, setPlanResult,
+    setDeadlineDate, setFeasibility,
     setLoading, setError, setSynthesisNote, setCreatedGoalId,
     closeDialog, reset,
   } = useGoalDialogStore()
@@ -31,6 +35,13 @@ export function GoalCreationDialog() {
   const [editedContent, setEditedContent] = useState('')
   // T07: progressive disclosure — button only shown after agent calls readyToGenerateQuests
   const [isReadyToGenerate, setIsReadyToGenerate] = useState(false)
+  // Materials collected during interview
+  const [materials, setMaterials] = useState<Material[]>([])
+  const [urlInput, setUrlInput] = useState('')
+  const [urlTitle, setUrlTitle] = useState('')
+  const [pasteText, setPasteText] = useState('')
+  const [pasteTitle, setPasteTitle] = useState('')
+  const [showMaterialPanel, setShowMaterialPanel] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const autoSaveCalledRef = useRef(false)
 
@@ -111,7 +122,14 @@ export function GoalCreationDialog() {
       const res = await fetch('/api/agents/goal-generator', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sphereId, message: content, phase, forceGenerate, forceToolName }),
+        body: JSON.stringify({
+          sphereId,
+          message: content,
+          phase,
+          forceGenerate,
+          forceToolName,
+          materials: materials.map(m => ({ url: m.url, title: m.title })),
+        }),
       })
 
       if (!res.ok) {
@@ -125,7 +143,6 @@ export function GoalCreationDialog() {
       }
 
       // For forced tool calls, the route returns plain JSON (not a stream).
-      // This avoids the @ai-sdk/anthropic parallel-tool streaming bug.
       if (forceGenerate && forceToolName) {
         console.log('[FIX] forceGenerate: reading JSON response')
         const json = await res.json() as { toolResult?: unknown; error?: string }
@@ -262,23 +279,44 @@ export function GoalCreationDialog() {
           setDraftGoalTitle(r.goalTitle as string)
         }
 
-        // Generate 90-day plan (milestone-aware — no separate tasksPerQuest needed)
-        const today = new Date().toISOString().slice(0, 10)
-        logger.debug('[GoalCreationDialog] calling generateGoalPlan', {
-          questCount: drafts.length,
-          milestonesPerQuest: drafts.map(q => q.milestones.length),
-        })
-        const planResult = generateGoalPlan({
+        // Capture deadline from generateQuests result
+        if (r.deadlineDate && typeof r.deadlineDate === 'string') {
+          setDeadlineDate(r.deadlineDate)
+        }
+
+        // Generate queue-based plan
+        logger.debug('generateTaskQueue called', { questCount: drafts.length })
+        const planResult = generateTaskQueue({
           goalType: draftGoalType ?? 'skill',
-          startDate: today,
           quests: drafts,
-          existingDailyFatigue: [],
         })
 
         setPlanResult(planResult)
         logger.debug('[GoalCreationDialog] phase → preview', { taskCount: planResult.tasks.length })
         setPhase('preview')
       }
+
+      // Handle assessFeasibility result
+      if (r.isFeasible !== undefined && r.weeklyMinutes !== undefined) {
+        setFeasibility({
+          isFeasible: r.isFeasible as boolean,
+          weeklyMinutes: r.weeklyMinutes as number,
+          weeksNeeded: r.weeksNeeded as number,
+          weeksAvailable: r.weeksAvailable as number,
+          estimatedCompletionWeeks: r.estimatedCompletionWeeks as number,
+        })
+      }
+
+      // Handle fetchMaterialUrl result (has `content` + `title`, no `phase`)
+      if (r.content && r.title && !r.phase) {
+        setMaterials(prev => [...prev, {
+          title: r.title as string,
+          content: r.content as string,
+          url: r.url as string | undefined,
+        }])
+        logger.debug('materials added', { count: materials.length + 1 })
+      }
+
       if (r.phase === 'synthesis' && r.title && r.content) {
         logger.debug('[GoalCreationDialog] synthesis tool result received', { titleLength: String(r.title).length })
         setSynthesisNote({ title: r.title as string, content: r.content as string })
@@ -296,15 +334,9 @@ export function GoalCreationDialog() {
 
     setLoading(true)
     setError(null)
+    logger.debug('confirm called', { materialCount: materials.length, hasDeadline: !!deadlineDate })
 
     try {
-      const today = new Date().toISOString().slice(0, 10)
-      const endDate = (() => {
-        const d = new Date(today)
-        d.setUTCDate(d.getUTCDate() + 90)
-        return d.toISOString().slice(0, 10)
-      })()
-
       const res = await fetch('/api/goals/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -314,8 +346,8 @@ export function GoalCreationDialog() {
           title: draftGoalTitle ?? undefined,
           quests: draftQuests,
           tasks: planResult.tasks,
-          startDate: today,
-          endDate,
+          deadlineDate: deadlineDate ?? undefined,
+          materials,
         }),
       })
 
@@ -345,6 +377,23 @@ export function GoalCreationDialog() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleFetchUrl = async () => {
+    if (!urlInput.trim() || isLoading) return
+    const msg = `I have a relevant URL: ${urlInput.trim()}${urlTitle ? ` (title: ${urlTitle})` : ''}`
+    addMessage({ role: 'user', content: msg })
+    setUrlInput('')
+    setUrlTitle('')
+    await callAgent(msg)
+  }
+
+  const handleAddPastedMaterial = () => {
+    if (!pasteText.trim() || !pasteTitle.trim()) return
+    setMaterials(prev => [...prev, { title: pasteTitle.trim(), content: pasteText.trim() }])
+    logger.debug('materials added', { count: materials.length + 1 })
+    setPasteText('')
+    setPasteTitle('')
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -463,8 +512,8 @@ export function GoalCreationDialog() {
                 }}
               >
                 {phase === 'gathering' && 'Tell me about your goal'}
-                {phase === 'planning' && 'Generating 90-day plan...'}
-                {phase === 'preview' && 'Review your 90-day schedule'}
+                {phase === 'planning' && 'Generating plan...'}
+                {phase === 'preview' && 'Review your plan'}
                 {phase === 'confirmed' && 'Goal created'}
                 {phase === 'synthesis' && 'Create summary note'}
               </p>
@@ -486,7 +535,7 @@ export function GoalCreationDialog() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
                   {messages.length === 0 && (
                     <p style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '1rem', color: 'rgba(255,255,255,0.4)', fontStyle: 'italic', margin: 0 }}>
-                      Describe your goal. What do you want to achieve in the next 90 days?
+                      Describe your goal. What do you want to achieve?
                     </p>
                   )}
                   {messages.map((msg, i) => (
@@ -520,6 +569,38 @@ export function GoalCreationDialog() {
                       </div>
                     </div>
                   ))}
+
+                  {/* Material chips */}
+                  {materials.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.375rem', marginTop: '0.25rem' }}>
+                      {materials.map((m, i) => (
+                        <span
+                          key={i}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            padding: '0.25rem 0.5rem',
+                            backgroundColor: 'rgba(255,255,255,0.06)',
+                            border: '1px solid rgba(255,255,255,0.12)',
+                            fontSize: '0.75rem',
+                            fontFamily: 'Cormorant, Georgia, serif',
+                            color: 'rgba(255,255,255,0.6)',
+                          }}
+                        >
+                          {m.url ? <Link size={10} /> : null}
+                          {m.title}
+                          <button
+                            onClick={() => setMaterials(prev => prev.filter((_, j) => j !== i))}
+                            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: 0, lineHeight: 1 }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   <div ref={messagesEndRef} />
                 </div>
               </>
@@ -530,14 +611,18 @@ export function GoalCreationDialog() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '0.75rem' }}>
                 <RefreshCw size={18} style={{ animation: 'spin 1s linear infinite', color: 'rgba(255,255,255,0.5)' }} />
                 <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '1rem', color: 'rgba(255,255,255,0.5)' }}>
-                  Generating 90-day plan...
+                  Generating plan...
                 </span>
               </div>
             )}
 
             {/* PREVIEW phase: plan preview */}
             {phase === 'preview' && planResult && (
-              <PlanPreview planResult={planResult} startDate={new Date().toISOString().slice(0, 10)} />
+              <PlanPreview
+                planResult={planResult}
+                deadlineDate={deadlineDate}
+                feasibility={feasibility}
+              />
             )}
 
             {/* CONFIRMED phase */}
@@ -547,7 +632,7 @@ export function GoalCreationDialog() {
                   Goal Created
                 </span>
                 <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.9375rem', color: 'rgba(255,255,255,0.5)' }}>
-                  Your 90-day journey begins.
+                  Your journey begins.
                 </span>
                 {isLoading && (
                   <span style={{ fontFamily: 'Cormorant, Georgia, serif', fontSize: '0.8125rem', color: 'rgba(255,255,255,0.35)' }}>
@@ -585,7 +670,109 @@ export function GoalCreationDialog() {
                 flexShrink: 0,
               }}
             >
+              {/* Material panel (collapsible) */}
+              {showMaterialPanel && (
+                <div style={{
+                  padding: '0.75rem',
+                  backgroundColor: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.5rem',
+                }}>
+                  {/* URL fetch */}
+                  <div style={{ display: 'flex', gap: '0.375rem' }}>
+                    <input
+                      value={urlInput}
+                      onChange={e => setUrlInput(e.target.value)}
+                      placeholder="Paste a URL..."
+                      style={{
+                        flex: 1,
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: '#fff',
+                        padding: '0.375rem 0.5rem',
+                        fontSize: '0.8125rem',
+                        fontFamily: 'Cormorant, Georgia, serif',
+                        outline: 'none',
+                      }}
+                    />
+                    <input
+                      value={urlTitle}
+                      onChange={e => setUrlTitle(e.target.value)}
+                      placeholder="Title (optional)"
+                      style={{
+                        width: '140px',
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: '#fff',
+                        padding: '0.375rem 0.5rem',
+                        fontSize: '0.8125rem',
+                        fontFamily: 'Cormorant, Georgia, serif',
+                        outline: 'none',
+                      }}
+                    />
+                    <Button size="sm" onClick={handleFetchUrl} disabled={!urlInput.trim() || isLoading}>
+                      Fetch
+                    </Button>
+                  </div>
+
+                  {/* Text paste */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                    <input
+                      value={pasteTitle}
+                      onChange={e => setPasteTitle(e.target.value)}
+                      placeholder="Material title"
+                      style={{
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: '#fff',
+                        padding: '0.375rem 0.5rem',
+                        fontSize: '0.8125rem',
+                        fontFamily: 'Cormorant, Georgia, serif',
+                        outline: 'none',
+                      }}
+                    />
+                    <textarea
+                      value={pasteText}
+                      onChange={e => setPasteText(e.target.value)}
+                      placeholder="Paste text material here..."
+                      rows={3}
+                      style={{
+                        background: 'rgba(255,255,255,0.05)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        color: '#fff',
+                        padding: '0.375rem 0.5rem',
+                        fontSize: '0.8125rem',
+                        fontFamily: 'Cormorant, Georgia, serif',
+                        resize: 'vertical',
+                        outline: 'none',
+                      }}
+                    />
+                    <Button size="sm" onClick={handleAddPastedMaterial} disabled={!pasteText.trim() || !pasteTitle.trim()}>
+                      <Plus size={14} style={{ marginRight: '0.25rem' }} />
+                      Add Material
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '0.625rem', alignItems: 'flex-end' }}>
+                <button
+                  onClick={() => setShowMaterialPanel(p => !p)}
+                  title="Add material"
+                  style={{
+                    background: 'none',
+                    border: '1px solid rgba(255,255,255,0.15)',
+                    color: 'rgba(255,255,255,0.4)',
+                    cursor: 'pointer',
+                    padding: '0.375rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Link size={14} />
+                </button>
                 <Textarea
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}

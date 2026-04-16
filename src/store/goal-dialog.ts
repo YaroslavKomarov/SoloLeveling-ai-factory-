@@ -3,7 +3,7 @@
  * Manages the multi-phase AI chat flow for creating a new goal.
  */
 import { create } from 'zustand'
-import type { GoalPlanResult, GoalType, QuestDraft } from '@/lib/supabase/types'
+import type { QueuePlanResult, FeasibilityResult, GoalType, QuestDraft } from '@/lib/supabase/types'
 
 type DialogPhase = 'idle' | 'gathering' | 'quests' | 'planning' | 'preview' | 'confirmed' | 'synthesis'
 
@@ -21,7 +21,9 @@ interface GoalDialogState {
   draftGoalType: GoalType | null
   draftGoalTitle: string | null
   draftQuests: QuestDraft[]
-  planResult: GoalPlanResult | null
+  planResult: QueuePlanResult | null
+  deadlineDate: string | null
+  feasibility: FeasibilityResult | null
   isLoading: boolean
   error: string | null
   /** Synthesized note content returned by the suggestNoteContent tool */
@@ -39,7 +41,9 @@ interface GoalDialogState {
   updateDraftQuest: (index: number, updates: Partial<QuestDraft>) => void
   setDraftGoalType: (type: GoalType) => void
   setDraftGoalTitle: (title: string) => void
-  setPlanResult: (result: GoalPlanResult) => void
+  setPlanResult: (result: QueuePlanResult) => void
+  setDeadlineDate: (date: string) => void
+  setFeasibility: (result: FeasibilityResult | null) => void
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
   setSynthesisNote: (note: { title: string; content: string } | null) => void
@@ -56,6 +60,8 @@ const initialState = {
   draftGoalTitle: null,
   draftQuests: [],
   planResult: null,
+  deadlineDate: null,
+  feasibility: null,
   isLoading: false,
   error: null,
   synthesisNote: null,
@@ -140,6 +146,15 @@ export const useGoalDialogStore = create<GoalDialogState>((set) => ({
   setDraftGoalTitle: (title) => set({ draftGoalTitle: title }),
 
   setPlanResult: (result) => set({ planResult: result }),
+
+  setDeadlineDate: (date) => {
+    if (process.env.NODE_ENV === 'development') {
+      console.debug('[goal-dialog] setDeadlineDate', { date })
+    }
+    set({ deadlineDate: date })
+  },
+
+  setFeasibility: (result) => set({ feasibility: result }),
 
   setLoading: (loading) => set({ isLoading: loading }),
 
