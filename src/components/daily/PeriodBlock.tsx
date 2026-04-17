@@ -3,15 +3,22 @@
 /**
  * PeriodBlock — expandable activity-period card for the daily timeline.
  * Collapsed: shows period name, time range, sphere, goal tag.
- * Expanded: goal name + deadline, fatigue bars (read-only), task list (read-only).
- * No task-execution buttons — those are Milestones D/E.
+ * Expanded: goal name + deadline, fatigue bars (read-only), task list.
+ * Milestone D: strategic tasks show "Начать сессию" button.
  */
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
+import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown, ChevronUp, Clock, Zap, Target, AlertCircle } from 'lucide-react'
 import { useUserStore } from '@/store/user'
 import { createLogger } from '@/lib/logger'
 import type { PeriodWithTasks } from '@/store/periods'
+
+const StrategicTaskChatModal = dynamic(
+  () => import('@/components/strategic-task/StrategicTaskChatModal').then((m) => m.StrategicTaskChatModal),
+  { ssr: false }
+)
 
 const logger = createLogger('PeriodBlock')
 
@@ -48,6 +55,8 @@ function FatigueBar({ label, value, color }: { label: string; value: number; col
 export function PeriodBlock({ data, isExpanded, onToggle, isActive }: Props) {
   const { period, sphere, goal, tasks, periodMinutes, loadedMinutes } = data
   const fatigue = useUserStore((s) => s.fatigue)
+  const router = useRouter()
+  const [modalTaskId, setModalTaskId] = useState<string | null>(null)
 
   useEffect(() => {
     logger.debug('[PeriodBlock] mounted', { periodId: period.id, taskCount: tasks.length })
@@ -108,6 +117,24 @@ export function PeriodBlock({ data, isExpanded, onToggle, isActive }: Props) {
         </div>
       </button>
 
+      {/* Strategic task session modal */}
+      {modalTaskId && goal && (
+        <StrategicTaskChatModal
+          taskId={modalTaskId}
+          goalId={goal.id}
+          taskTitle={tasks.find((t) => t.id === modalTaskId)?.title ?? ''}
+          onClose={() => {
+            logger.info('[PeriodBlock] session modal closed', { taskId: modalTaskId })
+            setModalTaskId(null)
+          }}
+          onComplete={(result) => {
+            logger.info('[PeriodBlock] strategic task completed', { taskId: modalTaskId, ...result })
+            setModalTaskId(null)
+            router.refresh()
+          }}
+        />
+      )}
+
       {/* Expanded content */}
       <AnimatePresence>
         {isExpanded && (
@@ -161,25 +188,35 @@ export function PeriodBlock({ data, isExpanded, onToggle, isActive }: Props) {
                   </p>
                 ) : (
                   tasks.map((task) => (
-                    <div
-                      key={task.id}
-                      className="flex items-center gap-2 py-1.5 border-b border-white/5 last:border-0"
-                    >
-                      <span
-                        className="text-xs px-1.5 py-0.5 border font-['Cinzel'] uppercase tracking-wider flex-shrink-0"
-                        style={{
-                          borderColor: task.task_type === 'strategic' ? '#a855f7' : '#00d4ff',
-                          color: task.task_type === 'strategic' ? '#a855f7' : '#00d4ff',
-                        }}
-                      >
-                        {task.task_type === 'strategic' ? 'STR' : 'REG'}
-                      </span>
-                      <span className="text-sm text-white/80 font-['Cormorant'] flex-1 truncate">
-                        {task.title}
-                      </span>
-                      <span className="text-xs text-white/30 font-['Orbitron'] flex-shrink-0">
-                        {task.duration_minutes}m
-                      </span>
+                    <div key={task.id} className="border-b border-white/5 last:border-0 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="text-xs px-1.5 py-0.5 border font-['Cinzel'] uppercase tracking-wider flex-shrink-0"
+                          style={{
+                            borderColor: task.task_type === 'strategic' ? '#a855f7' : '#00d4ff',
+                            color: task.task_type === 'strategic' ? '#a855f7' : '#00d4ff',
+                          }}
+                        >
+                          {task.task_type === 'strategic' ? 'STR' : 'REG'}
+                        </span>
+                        <span className="text-sm text-white/80 font-['Cormorant'] flex-1 truncate">
+                          {task.title}
+                        </span>
+                        <span className="text-xs text-white/30 font-['Orbitron'] flex-shrink-0">
+                          {task.duration_minutes}m
+                        </span>
+                      </div>
+                      {task.task_type === 'strategic' && task.status === 'scheduled' && (
+                        <button
+                          onClick={() => {
+                            logger.debug('[PeriodBlock] start session', { taskId: task.id, periodId: period.id })
+                            setModalTaskId(task.id)
+                          }}
+                          className="mt-1 text-xs text-[#a855f7] border border-[#a855f7]/30 px-2 py-0.5 uppercase tracking-wider font-['Cinzel'] hover:bg-[#a855f7]/10 transition-colors"
+                        >
+                          Начать сессию
+                        </button>
+                      )}
                     </div>
                   ))
                 )}

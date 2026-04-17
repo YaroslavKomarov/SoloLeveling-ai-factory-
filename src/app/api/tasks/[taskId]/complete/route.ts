@@ -42,7 +42,10 @@ export async function POST(request: NextRequest, { params }: Props) {
 
     logger.debug('Request body validated', { taskId, hasNote: !!parsed.data.note })
 
-    const result = await completeTask(supabase, user.id, taskId, parsed.data.note)
+    // [FIX] Deadline multiplier (×0.5 after deadline) only applies to strategic tasks,
+    // which use the dedicated /complete-strategic route. This route handles regular + missed
+    // tasks — pass null so completeTask applies the default multiplier of 1.0.
+    const result = await completeTask(supabase, user.id, taskId, parsed.data.note, null)
 
     const duration = Date.now() - requestStart
     logger.info('Complete response', {
