@@ -94,6 +94,8 @@ SoloLevelingAiFactory/
 │   │   │   │       └── chat/[sessionId]/
 │   │   │   │           ├── route.ts                    # POST → stream goal-expert agent response
 │   │   │   │           └── messages/route.ts           # GET → load session message history
+│   │   │   ├── periods/
+│   │   │   │   └── today/route.ts                      # GET → today's periods with sphere/goal/tasks (Milestone C)
 │   │   │   ├── tasks/
 │   │   │   │   ├── [taskId]/complete/route.ts          # POST → complete task, award XP
 │   │   │   │   └── [taskId]/skip/route.ts              # POST → skip task
@@ -152,8 +154,12 @@ SoloLevelingAiFactory/
 │   │   │   ├── GoalAtRiskBanner.tsx                    # Banner when goal is at risk
 │   │   │   ├── GoalFailureDialog.tsx                   # Failure acknowledgment + new goal prompt
 │   │   │   └── index.ts                                # Barrel export
+│   │   ├── daily/
+│   │   │   ├── DailyTimeline.tsx                       # Horizontal 24h timeline with real-time marker (Milestone C)
+│   │   │   ├── DailyTimelineInit.tsx                   # Client store hydrator (server data → usePeriodsStore)
+│   │   │   └── PeriodBlock.tsx                         # Expandable activity-period card
 │   │   ├── tasks/
-│   │   │   ├── TodayTaskList.tsx                       # Grouped task list for Today page
+│   │   │   ├── TodayTaskList.tsx                       # Grouped task list for Today page (Milestones D/E)
 │   │   │   ├── TaskCard.tsx                            # Task card: complete/skip actions + animations
 │   │   │   └── StrategicExecutionDialog.tsx            # Strategic task execution chat dialog
 │   │   ├── retrospective/
@@ -420,7 +426,12 @@ npm run build    # Production build
 
 | Document | Path | Description |
 |----------|------|-------------|
+| README | `README.md` | Project landing page |
+| Getting Started | `docs/getting-started.md` | Installation, env vars, first run |
+| Architecture | `docs/architecture.md` | Project structure, patterns, agents |
+| Daily Workflow | `docs/daily-workflow.md` | Activity periods, timeline UI, carry-over, push notifications |
+| API Reference | `docs/api.md` | All API endpoints with request/response shapes |
+| Deployment | `docs/deployment.md` | Vercel + Supabase Cloud + Edge Functions setup |
 | Full Spec | `START_PROJECT.md` | 38 user scenarios across 7 flows |
 | Design | `design/` | Visual style, colors, typography, components, animations, icons |
 | AI Context | `.ai-factory/DESCRIPTION.md` | Condensed spec for AI agents |
-| Feature Plans | `.ai-factory/features/` | Implementation plans per phase (all complete) |

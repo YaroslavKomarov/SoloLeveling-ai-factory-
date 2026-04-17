@@ -307,6 +307,36 @@ export async function getTasksByGoalOrdered(supabase: DB, goalId: string): Promi
   return data
 }
 
+/**
+ * Returns only 'scheduled' tasks for a goal ordered by order_index.
+ * Use for the period task-loading algorithm (Веха C+).
+ * Unlike getTasksByGoalOrdered, excludes completed/skipped/cancelled/missed tasks.
+ */
+export async function getScheduledTasksByGoalOrdered(
+  supabase: DB,
+  goalId: string
+): Promise<TaskRow[]> {
+  logger.debug('[Tasks.getScheduledTasksByGoalOrdered]', { goalId })
+
+  const { data, error } = await supabase
+    .from('tasks')
+    .select()
+    .eq('goal_id', goalId)
+    .eq('status', 'scheduled')
+    .order('order_index', { ascending: true })
+
+  if (error) {
+    logger.error('[Tasks.getScheduledTasksByGoalOrdered] failed', {
+      goalId,
+      error: error.message,
+    })
+    throw new Error(`getScheduledTasksByGoalOrdered: ${error.message}`)
+  }
+
+  logger.debug('[Tasks.getScheduledTasksByGoalOrdered]', { goalId, count: data.length })
+  return data
+}
+
 // =============================================================
 // Daily Fatigue
 // =============================================================

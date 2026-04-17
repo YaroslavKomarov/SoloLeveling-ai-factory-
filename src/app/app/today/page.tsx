@@ -1,22 +1,31 @@
 /**
- * Today's task execution page — Server Component.
- * Fetches today's tasks, fatigue, active goals, failed unacknowledged goals,
- * and at-risk goals, then passes to TodayTaskList.
+ * Today's daily timeline page — Server Component.
+ * Fetches today's activity periods, tasks per period, and fatigue.
+ * Renders a horizontal activity-period timeline (Milestone C).
+ *
+ * Deep-link: ?periodId=<uuid> auto-expands the matching period.
+ * Next.js 15: searchParams is a Promise — must be awaited.
  */
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
-import { getTasksByDate, getDailyFatigue, getMissedTasks, getRegularTaskSkipStats } from '@/lib/supabase/tasks'
-import { getGoalsByUser, getFailedUnacknowledgedGoals } from '@/lib/supabase/goals'
-import { TodayTaskList } from '@/components/tasks/TodayTaskList'
+import { getTodayActivityPeriods } from '@/lib/supabase/activity-periods'
+import { getDailyFatigue } from '@/lib/supabase/tasks'
+import { getActiveGoalBySphere } from '@/lib/supabase/goals'
+import { getTasksForPeriod, getPeriodDurationMinutes } from '@/lib/services/period-tasks'
+import { DailyTimelineInit } from '@/components/daily/DailyTimelineInit'
 import { createLogger } from '@/lib/logger'
+import type { GoalRow, SphereRow, TaskRow } from '@/lib/supabase/types'
+import type { PeriodWithTasks } from '@/store/periods'
 
-const logger = createLogger('TodayPage')
+const logger = createLogger('Today')
 
-function getTodayUTC(): string {
-  return new Date().toISOString().slice(0, 10)
-}
+export default async function TodayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ periodId?: string }>
+}) {
+  const { periodId } = await searchParams
 
-export default async function TodayPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
@@ -24,49 +33,82 @@ export default async function TodayPage() {
     redirect('/login')
   }
 
-  const today = getTodayUTC()
-  logger.debug(`Fetching tasks for userId=${user.id}, date=${today}`)
+  logger.info('[Today] rendering daily timeline', { periodId: periodId ?? 'none', userId: user.id })
 
-  const [tasks, fatigue, goals, failedGoals, missedTasks] = await Promise.all([
-    getTasksByDate(supabase, user.id, today),
+  const today = new Date().toISOString().slice(0, 10)
+
+  const [periods, fatigue] = await Promise.all([
+    getTodayActivityPeriods(supabase, user.id),
     getDailyFatigue(supabase, user.id, today),
-    getGoalsByUser(supabase, user.id, 'active'),
-    getFailedUnacknowledgedGoals(supabase, user.id),
-    getMissedTasks(supabase, user.id),
   ])
 
-  // Fetch active goals that are at risk
-  const atRiskGoals = goals.filter((g) => g.is_at_risk)
+  if (periods.length === 0) {
+    logger.warn('[Today] no activity periods found for today', { userId: user.id })
+  }
 
-  // Fetch per-regular-task skip stats for N/7 display and at-risk warnings
-  const regularTaskStats = await getRegularTaskSkipStats(supabase, user.id, goals.map((g) => g.id))
+  const periodsData: PeriodWithTasks[] = []
 
-  logger.debug('TodayPage data fetched', {
-    taskCount: tasks.length,
-    missedTasks: missedTasks.length,
-    fatigue: fatigue
-      ? { physical: fatigue.physical, emotional: fatigue.emotional, intellectual: fatigue.intellectual }
-      : 'none (first visit today)',
-    activeGoals: goals.length,
-    failedUnacknowledgedGoals: failedGoals.length,
-    atRiskGoals: atRiskGoals.length,
-  })
+  for (const period of periods) {
+    // Find sphere linked to this period
+    const { data: sphereData } = await supabase
+      .from('spheres')
+      .select('id, name, user_id')
+      .eq('user_id', user.id)
+      .eq('period_id', period.id)
+      .maybeSingle()
 
-  const initialFatigue = fatigue ?? {
-    physical: 0,
-    emotional: 0,
-    intellectual: 0,
+    let goal: Pick<GoalRow, 'id' | 'title' | 'deadline_date'> | null = null
+    let tasks: TaskRow[] = []
+    const periodMinutes = getPeriodDurationMinutes(period)
+    let loadedMinutes = 0
+
+    if (sphereData) {
+      const activeGoal = await getActiveGoalBySphere(supabase, user.id, sphereData.id)
+
+      if (activeGoal) {
+        goal = {
+          id: activeGoal.id,
+          title: activeGoal.title,
+          deadline_date: activeGoal.deadline_date,
+        }
+        tasks = await getTasksForPeriod(period, activeGoal.id, supabase)
+        loadedMinutes = tasks.reduce((sum, t) => sum + t.duration_minutes, 0)
+      }
+    }
+
+    periodsData.push({
+      period,
+      sphere: sphereData ? { id: sphereData.id, name: sphereData.name } : null,
+      goal,
+      tasks,
+      periodMinutes,
+      loadedMinutes,
+    })
   }
 
   return (
-    <TodayTaskList
-      tasks={tasks}
-      missedTasks={missedTasks}
-      fatigue={initialFatigue}
-      goals={goals}
-      failedGoals={failedGoals}
-      atRiskGoals={atRiskGoals}
-      regularTaskStats={regularTaskStats}
-    />
+    <div className="min-h-screen bg-[#0a0c10] text-white p-4 md:p-8">
+      <div className="max-w-5xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-['Cinzel'] uppercase tracking-widest text-white">
+            Today
+          </h1>
+          <p className="text-sm text-white/30 font-['Cormorant'] mt-1">
+            {new Date().toLocaleDateString('en-US', {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            })}
+          </p>
+        </div>
+
+        <DailyTimelineInit
+          periodsData={periodsData}
+          fatigue={fatigue}
+          initialExpandedId={periodId ?? null}
+        />
+      </div>
+    </div>
   )
 }

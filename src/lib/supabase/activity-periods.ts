@@ -53,6 +53,43 @@ export async function getActivityPeriodsByUser(
   return data
 }
 
+/**
+ * Returns activity periods scheduled for today (current weekday).
+ * Uses activity_periods convention: 0=Mon … 6=Sun (≠ JS getDay() which is 0=Sun).
+ * Conversion: (jsDay + 6) % 7
+ */
+export async function getTodayActivityPeriods(
+  supabase: DB,
+  userId: string
+): Promise<ActivityPeriodRow[]> {
+  const jsDay = new Date().getDay()
+  const convertedDay = (jsDay + 6) % 7
+
+  logger.debug('[ActivityPeriods.getTodayActivityPeriods]', { userId, weekday: convertedDay })
+
+  const { data, error } = await supabase
+    .from('activity_periods')
+    .select()
+    .eq('user_id', userId)
+    .filter('days_of_week', 'cs', `{${convertedDay}}`)
+    .order('start_time', { ascending: true })
+
+  if (error) {
+    logger.error('[ActivityPeriods.getTodayActivityPeriods] query failed', {
+      userId,
+      weekday: convertedDay,
+      error: error.message,
+    })
+    throw new Error(`getTodayActivityPeriods: ${error.message}`)
+  }
+
+  logger.debug('[ActivityPeriods.getTodayActivityPeriods] found periods for today', {
+    count: data.length,
+    userId,
+  })
+  return data
+}
+
 export async function deleteActivityPeriodsByUser(
   supabase: DB,
   userId: string
