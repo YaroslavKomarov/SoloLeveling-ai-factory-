@@ -20,6 +20,16 @@ const StrategicTaskChatModal = dynamic(
   { ssr: false }
 )
 
+const RegularTaskCard = dynamic(
+  () => import('@/components/regular-task/RegularTaskCard').then((m) => m.RegularTaskCard),
+  { ssr: false }
+)
+
+const CorrectionChatModal = dynamic(
+  () => import('@/components/regular-task/CorrectionChatModal').then((m) => m.CorrectionChatModal),
+  { ssr: false }
+)
+
 const logger = createLogger('PeriodBlock')
 
 interface Props {
@@ -57,6 +67,7 @@ export function PeriodBlock({ data, isExpanded, onToggle, isActive }: Props) {
   const fatigue = useUserStore((s) => s.fatigue)
   const router = useRouter()
   const [modalTaskId, setModalTaskId] = useState<string | null>(null)
+  const [correctionTaskId, setCorrectionTaskId] = useState<string | null>(null)
 
   useEffect(() => {
     logger.debug('[PeriodBlock] mounted', { periodId: period.id, taskCount: tasks.length })
@@ -135,6 +146,23 @@ export function PeriodBlock({ data, isExpanded, onToggle, isActive }: Props) {
         />
       )}
 
+      {/* Regular task correction modal */}
+      {correctionTaskId && (
+        <CorrectionChatModal
+          taskId={correctionTaskId}
+          taskTitle={tasks.find((t) => t.id === correctionTaskId)?.title ?? ''}
+          onClose={() => {
+            logger.debug('[PeriodBlock] correction modal closed', { taskId: correctionTaskId })
+            setCorrectionTaskId(null)
+          }}
+          onCorrectionApplied={() => {
+            logger.info('[PeriodBlock] correction applied', { taskId: correctionTaskId })
+            setCorrectionTaskId(null)
+            router.refresh()
+          }}
+        />
+      )}
+
       {/* Expanded content */}
       <AnimatePresence>
         {isExpanded && (
@@ -189,33 +217,56 @@ export function PeriodBlock({ data, isExpanded, onToggle, isActive }: Props) {
                 ) : (
                   tasks.map((task) => (
                     <div key={task.id} className="border-b border-white/5 last:border-0 py-1.5">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="text-xs px-1.5 py-0.5 border font-['Cinzel'] uppercase tracking-wider flex-shrink-0"
-                          style={{
-                            borderColor: task.task_type === 'strategic' ? '#a855f7' : '#00d4ff',
-                            color: task.task_type === 'strategic' ? '#a855f7' : '#00d4ff',
+                      {task.task_type === 'regular' && task.status === 'scheduled' ? (
+                        <RegularTaskCard
+                          task={{
+                            id: task.id,
+                            title: task.title,
+                            duration_minutes: task.duration_minutes,
+                            repetition_index: task.repetition_index ?? null,
+                            description: task.description ?? null,
+                            status: task.status,
                           }}
-                        >
-                          {task.task_type === 'strategic' ? 'STR' : 'REG'}
-                        </span>
-                        <span className="text-sm text-white/80 font-['Cormorant'] flex-1 truncate">
-                          {task.title}
-                        </span>
-                        <span className="text-xs text-white/30 font-['Orbitron'] flex-shrink-0">
-                          {task.duration_minutes}m
-                        </span>
-                      </div>
-                      {task.task_type === 'strategic' && task.status === 'scheduled' && (
-                        <button
-                          onClick={() => {
-                            logger.debug('[PeriodBlock] start session', { taskId: task.id, periodId: period.id })
-                            setModalTaskId(task.id)
+                          onDone={(result) => {
+                            logger.debug('[PeriodBlock] regular task done', { taskId: task.id, xpGained: result.xpGained })
+                            router.refresh()
                           }}
-                          className="mt-1 text-xs text-[#a855f7] border border-[#a855f7]/30 px-2 py-0.5 uppercase tracking-wider font-['Cinzel'] hover:bg-[#a855f7]/10 transition-colors"
-                        >
-                          Начать сессию
-                        </button>
+                          onCorrect={() => {
+                            logger.debug('[PeriodBlock] open correction modal', { taskId: task.id })
+                            setCorrectionTaskId(task.id)
+                          }}
+                        />
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="text-xs px-1.5 py-0.5 border font-['Cinzel'] uppercase tracking-wider flex-shrink-0"
+                              style={{
+                                borderColor: task.task_type === 'strategic' ? '#a855f7' : '#00d4ff',
+                                color: task.task_type === 'strategic' ? '#a855f7' : '#00d4ff',
+                              }}
+                            >
+                              {task.task_type === 'strategic' ? 'STR' : 'REG'}
+                            </span>
+                            <span className="text-sm text-white/80 font-['Cormorant'] flex-1 truncate">
+                              {task.title}
+                            </span>
+                            <span className="text-xs text-white/30 font-['Orbitron'] flex-shrink-0">
+                              {task.duration_minutes}m
+                            </span>
+                          </div>
+                          {task.task_type === 'strategic' && task.status === 'scheduled' && (
+                            <button
+                              onClick={() => {
+                                logger.debug('[PeriodBlock] start session', { taskId: task.id, periodId: period.id })
+                                setModalTaskId(task.id)
+                              }}
+                              className="mt-1 text-xs text-[#a855f7] border border-[#a855f7]/30 px-2 py-0.5 uppercase tracking-wider font-['Cinzel'] hover:bg-[#a855f7]/10 transition-colors"
+                            >
+                              Начать сессию
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   ))
