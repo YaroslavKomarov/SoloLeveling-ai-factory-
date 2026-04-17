@@ -40,12 +40,16 @@ function getTodayUTC(): string {
 /**
  * Completes a task for a user. Validates ownership, date, and strategic note.
  * Updates fatigue, task status, completion note, and awards XP.
+ *
+ * @param goalDeadlineDate - Optional goal deadline (ISO date string). If set and in the past,
+ *   XP is multiplied by 0.5 (late completion penalty).
  */
 export async function completeTask(
   supabase: DB,
   userId: string,
   taskId: string,
-  note?: string
+  note?: string,
+  goalDeadlineDate?: string | null
 ): Promise<CompleteTaskResult> {
   const startTime = Date.now()
   logger.debug('completeTask START', { userId, taskId, hasNote: !!note })
@@ -75,9 +79,11 @@ export async function completeTask(
 
   // Step 2: Enforce scheduled_date === today for scheduled tasks.
   // Missed tasks (catch-up completions) bypass this check — they are from past dates.
+  // Queue-based tasks have scheduled_date === null — skip date check entirely.
   const today = getTodayUTC()
-  logger.debug('Step 2: Verifying task date', { taskScheduledDate: task.scheduled_date, today, status: task.status })
-  if (task.status === 'scheduled' && task.scheduled_date !== today) {
+  const isQueueBased = task.scheduled_date === null
+  logger.debug('Step 2: scheduled_date check', { scheduledDate: task.scheduled_date, today, status: task.status, isQueueBased })
+  if (task.status === 'scheduled' && task.scheduled_date !== null && task.scheduled_date !== today) {
     logger.warn('Task is not scheduled for today', { taskId, scheduledDate: task.scheduled_date, today })
     throw Object.assign(new Error('Task is not scheduled for today'), { code: 422 })
   }
@@ -181,13 +187,16 @@ export async function completeTask(
     }
   }
 
-  // Step 10: Award XP
-  logger.debug('Step 10: Awarding XP', { userId, xpReward: task.xp_reward })
+  // Step 10: Award XP (with optional deadline multiplier)
+  const isAfterDeadline = !!goalDeadlineDate && new Date() > new Date(goalDeadlineDate)
+  const multiplier = isAfterDeadline ? 0.5 : 1.0
+  const xpGained = Math.floor(task.xp_reward * multiplier)
+  logger.debug('Step 10: XP multiplier', { multiplier, isAfterDeadline, xpReward: task.xp_reward, xpGained, goalDeadlineDate })
   const xpStart = Date.now()
   let xpResult: AddXpResult
   try {
-    xpResult = await addXpToUser(supabase, userId, task.xp_reward)
-    logger.debug('XP awarded', { userId, xpGained: task.xp_reward, duration: `${Date.now() - xpStart}ms`, ...xpResult })
+    xpResult = await addXpToUser(supabase, userId, xpGained)
+    logger.debug('XP awarded', { userId, xpGained, duration: `${Date.now() - xpStart}ms`, ...xpResult })
   } catch (xpError) {
     logger.error('XP award failed', { userId, taskId, error: xpError instanceof Error ? xpError.message : String(xpError) })
     throw xpError
@@ -198,7 +207,8 @@ export async function completeTask(
     taskId,
     userId,
     taskType: task.task_type,
-    xpGained: task.xp_reward,
+    xpGained,
+    multiplier,
     didLevelUp: xpResult.didLevelUp,
     newLevel: xpResult.newLevel,
     duration: `${totalDuration}ms`,
@@ -207,7 +217,7 @@ export async function completeTask(
   return {
     task: finalTask,
     fatigue: updatedFatigue,
-    xpGained: task.xp_reward,
+    xpGained,
     didLevelUp: xpResult.didLevelUp,
     newLevel: xpResult.newLevel,
     newXp: xpResult.newXp,
