@@ -222,9 +222,14 @@ export function OnboardingChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamingContent])
 
-  // Send initial greeting on mount
+  // Send initial greeting on mount; reset stale streaming state first
   useEffect(() => {
-    if (messages.length === 0 && !isStreaming) {
+    const store = useOnboardingStore.getState()
+    if (store.messages.length === 0) {
+      if (store.isStreaming) {
+        logger.warn('[FIX] stale isStreaming=true on mount — resetting before initial greeting')
+        store.setStreaming(false, '')
+      }
       sendMessage('Привет!')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -309,7 +314,8 @@ export function OnboardingChat() {
 
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim()
-    if (!trimmed || isStreaming) return
+    // Read isStreaming from store directly to avoid stale closure values
+    if (!trimmed || useOnboardingStore.getState().isStreaming) return
 
     logger.debug('message sent', { length: trimmed.length })
 
@@ -358,6 +364,9 @@ export function OnboardingChat() {
 
       if (accumulated) {
         addMessage({ id: crypto.randomUUID(), role: 'assistant', content: accumulated, created_at: new Date().toISOString() })
+      } else {
+        logger.warn('[FIX] agent stream ended empty — showing fallback error')
+        addMessage({ id: crypto.randomUUID(), role: 'assistant', content: 'Нет ответа от агента. Попробуйте ещё раз.', created_at: new Date().toISOString() })
       }
 
       setStreaming(false, '')
@@ -373,7 +382,7 @@ export function OnboardingChat() {
       setStreaming(false, '')
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStreaming, messages, phase, addMessage, setStreaming])
+  }, [messages, phase, addMessage, setStreaming])
 
   const handleSubmit = useCallback(() => {
     if (!inputValue.trim() || isStreaming) return

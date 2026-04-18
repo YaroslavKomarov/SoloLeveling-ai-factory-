@@ -6,12 +6,12 @@ export default function OnboardingPage() {
   return (
     <div
       style={{
+        position: 'fixed',
+        inset: 0,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        width: '100%',
-        height: '100vh',
-        minHeight: 0,
+        backgroundColor: '#0a0c10',
       }}
     >
       <OnboardingChat />
