@@ -15,6 +15,7 @@ import { GoalNotesPanel } from '@/components/goals/GoalNotesPanel'
 import { GoalExpertPanel } from '@/components/goals/GoalExpertPanel'
 import { createLogger } from '@/lib/logger'
 import { useGoalsStore } from '@/store/goals'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import type { GoalRow, QuestRow, TaskRow } from '@/lib/supabase/types'
 
 const logger = createLogger('GoalDetailClient')
@@ -193,6 +194,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
   const overallProgress = calculateGoalProgress(quests, allTasks)
   const goalInactive = goal.status === 'failed' || goal.status === 'cancelled'
   const progressColor = TYPE_PROGRESS_COLOR[goal.goal_type]
+  const isMobile = useIsMobile()
 
   logger.debug('goalProgress', { progressPct: overallProgress, questCount: quests.length })
 
@@ -318,6 +320,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
                 textTransform: 'uppercase',
                 padding: '0.375rem 0.75rem',
                 transition: 'all 0.15s',
+                minHeight: isMobile ? '44px' : undefined,
               }}
             >
               Goal
@@ -341,6 +344,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
                 textTransform: 'uppercase',
                 padding: '0.375rem 0.75rem',
                 transition: 'all 0.15s',
+                minHeight: isMobile ? '44px' : undefined,
               }}
             >
               <MessageSquare size={12} />
@@ -366,6 +370,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
                 textTransform: 'uppercase',
                 padding: '0.375rem 0.75rem',
                 transition: 'all 0.15s',
+                minHeight: isMobile ? '44px' : undefined,
               }}
             >
               <FileText size={12} />
@@ -641,7 +646,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
                     </button>
                   </div>
                   {/* Body */}
-                  <div style={{ flex: 1, overflow: 'hidden' }}>
+                  <div style={{ flex: 1, overflow: 'hidden', minHeight: 0 }}>
                     <GoalExpertPanel goalId={goal.id} initialTaskSession={initialTaskSession} />
                   </div>
                 </motion.div>

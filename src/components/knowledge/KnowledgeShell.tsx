@@ -10,7 +10,7 @@
  * │          │  toggle: Edit/Preview   │              │
  * └──────────┴────────────────────────┴──────────────┘
  */
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Eye, Edit3, Plus } from 'lucide-react'
 import type { NoteRow } from '@/lib/supabase/types'
@@ -20,8 +20,11 @@ import { MarkdownEditor } from './MarkdownEditor'
 import { MarkdownRenderer } from './MarkdownRenderer'
 import { RagChatPanel } from './RagChatPanel'
 import { createLogger } from '@/lib/logger'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const logger = createLogger('KnowledgeShell')
+
+type MobileTab = 'files' | 'editor' | 'chat'
 
 const PANEL_LEFT_WIDTH = 240
 const PANEL_RIGHT_WIDTH = 320
@@ -44,6 +47,10 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
   const setIsEditing = useKnowledgeStore((s) => s.setIsEditing)
   const createNote = useKnowledgeStore((s) => s.createNote)
 
+  const isMobile = useIsMobile()
+  const [activeTab, setActiveTab] = useState<MobileTab>('editor')
+  const prevTabRef = useRef<MobileTab>('editor')
+
   const [isCreating, setIsCreating] = useState(false)
   const [newNoteTitle, setNewNoteTitle] = useState('')
   const [newNotePath, setNewNotePath] = useState('')
@@ -55,6 +62,16 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
       initialNoteCount: initialNotes.length,
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    logger.debug('layout mode', { isMobile, activeTab })
+  }, [isMobile, activeTab])
+
+  const switchTab = useCallback((tab: MobileTab) => {
+    logger.debug('tab switched', { from: prevTabRef.current, to: tab })
+    prevTabRef.current = tab
+    setActiveTab(tab)
+  }, [])
 
   // Hydrate store from server-rendered notes
   useEffect(() => {
@@ -130,22 +147,59 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
     [newNoteTitle, newNotePath, createNote, selectNote, setIsEditing]
   )
 
+  const TAB_HEIGHT = 44
+
   return (
     <div
       style={{
         display: 'flex',
+        flexDirection: isMobile ? 'column' : 'row',
         height: 'calc(100vh - var(--header-height, 56px))',
         background: '#0a0c10',
         position: 'relative',
       }}
     >
-      {/* ── Left panel: FileTree (240px) ── */}
+      {/* ── Mobile: Tab bar ── */}
+      {isMobile && (
+        <div
+          style={{
+            display: 'flex',
+            flexShrink: 0,
+            height: `${TAB_HEIGHT}px`,
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
+          }}
+        >
+          {(['files', 'editor', 'chat'] as MobileTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => switchTab(tab)}
+              style={{
+                flex: 1,
+                background: activeTab === tab ? 'rgba(255,255,255,0.06)' : 'transparent',
+                border: 'none',
+                borderBottom: activeTab === tab ? '2px solid rgba(255,255,255,0.5)' : '2px solid transparent',
+                cursor: 'pointer',
+                color: activeTab === tab ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.35)',
+                fontFamily: 'Cinzel, serif',
+                fontSize: '10px',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                minHeight: `${TAB_HEIGHT}px`,
+              }}
+            >
+              {tab === 'files' ? 'Files' : tab === 'editor' ? 'Editor' : 'Chat'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Left panel: FileTree (240px desktop | full-width mobile when active) ── */}
       <div
         style={{
-          width: `${PANEL_LEFT_WIDTH}px`,
+          width: isMobile ? '100%' : `${PANEL_LEFT_WIDTH}px`,
           flexShrink: 0,
-          borderRight: '1px solid rgba(255,255,255,0.08)',
-          display: 'flex',
+          borderRight: isMobile ? 'none' : '1px solid rgba(255,255,255,0.08)',
+          display: isMobile && activeTab !== 'files' ? 'none' : 'flex',
           flexDirection: 'column',
           overflowY: 'auto',
         }}
@@ -196,10 +250,11 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
       <div
         style={{
           flex: 1,
-          display: 'flex',
+          display: isMobile && activeTab !== 'editor' ? 'none' : 'flex',
           flexDirection: 'column',
           minWidth: 0,
-          borderRight: '1px solid rgba(255,255,255,0.08)',
+          borderRight: isMobile ? 'none' : '1px solid rgba(255,255,255,0.08)',
+          width: isMobile ? '100%' : undefined,
         }}
       >
         {selectedNote ? (
@@ -334,12 +389,12 @@ export function KnowledgeShell({ initialNotes }: KnowledgeShellProps) {
         )}
       </div>
 
-      {/* ── Right panel: RAG Chat (320px) ── */}
+      {/* ── Right panel: RAG Chat (320px desktop | full-width mobile when active) ── */}
       <div
         style={{
-          width: `${PANEL_RIGHT_WIDTH}px`,
+          width: isMobile ? '100%' : `${PANEL_RIGHT_WIDTH}px`,
           flexShrink: 0,
-          display: 'flex',
+          display: isMobile && activeTab !== 'chat' ? 'none' : 'flex',
           flexDirection: 'column',
         }}
       >

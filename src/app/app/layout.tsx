@@ -92,14 +92,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <>
       <style>{`
         .app-content-wrapper {
-          width: 65%;
+          max-width: 900px;
+          width: 100%;
           margin: 0 auto;
+          padding: 0 2rem;
+          box-sizing: border-box;
         }
-        @media (max-width: 767px) {
+        @media (max-width: 768px) {
           .app-content-wrapper {
-            width: 100%;
             padding: 0 1rem;
-            box-sizing: border-box;
           }
         }
       `}</style>

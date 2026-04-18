@@ -16,6 +16,7 @@ import { motion } from 'framer-motion'
 import { X, Send, Loader2 } from 'lucide-react'
 import { Progress } from '@/components/ui/Progress'
 import { createLogger } from '@/lib/logger'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import type { GoalRow, QuestRow, TaskRow } from '@/lib/supabase/types'
 
 const logger = createLogger('GoalDialogModal')
@@ -61,13 +62,15 @@ export function GoalDialogModal({
 
   useEffect(() => setMounted(true), [])
 
+  const isMobile = useIsMobile()
   const accentColor = TYPE_ACCENT[goal.goal_type]
   const progressColor = TYPE_PROGRESS_COLOR[goal.goal_type]
   const completedTasks = allTasks.filter((t) => t.status === 'completed').length
 
   useEffect(() => {
     logger.debug('GoalDialog opened', { goalId: goal.id })
-  }, [goal.id])
+    logger.debug('mobile layout', { isMobile, panelVisible: !isMobile })
+  }, [goal.id, isMobile])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -266,8 +269,51 @@ export function GoalDialogModal({
 
         {/* Body: left context panel + right chat panel */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-          {/* Left: goal context */}
-          <div
+          {/* Mobile: collapsed goal context header */}
+          {isMobile && (
+            <div
+              style={{
+                position: 'absolute',
+                top: '3rem',
+                left: 0,
+                right: 0,
+                padding: '0.5rem 1rem',
+                borderBottom: '1px solid rgba(255,255,255,0.08)',
+                backgroundColor: 'rgba(10,12,16,0.98)',
+                zIndex: 1,
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: 'Cinzel, serif',
+                  fontSize: '0.55rem',
+                  letterSpacing: '0.1em',
+                  textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.3)',
+                }}
+              >
+                {sphereName}
+              </div>
+              <div
+                style={{
+                  fontFamily: 'Cinzel, serif',
+                  fontSize: '0.75rem',
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  color: '#ffffff',
+                  marginTop: '0.125rem',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {goal.title}
+              </div>
+            </div>
+          )}
+
+          {/* Left: goal context (desktop only) */}
+          {!isMobile && <div
             style={{
               width: '300px',
               flexShrink: 0,
@@ -427,10 +473,10 @@ export function GoalDialogModal({
                 </div>
               </div>
             )}
-          </div>
+          </div>}
 
           {/* Right: chat panel */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingTop: isMobile ? '3.5rem' : 0 }}>
             {/* Messages list */}
             <div
               style={{

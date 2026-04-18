@@ -16,6 +16,7 @@ import { X, FileText, Send } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { createLogger } from '@/lib/logger'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import type { GoalRow, NoteRow } from '@/lib/supabase/types'
 
 const logger = createLogger('GoalNotesModal')
@@ -38,11 +39,15 @@ export function GoalNotesModal({ goal, onClose }: GoalNotesModalProps) {
   const [isSending, setIsSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
+  const isMobile = useIsMobile()
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
 
   useEffect(() => setMounted(true), [])
+  useEffect(() => {
+    logger.debug('modal opened on mobile', { isMobile, viewportWidth: typeof window !== 'undefined' ? window.innerWidth : 0 })
+  }, [isMobile])
 
   const accentColor = TYPE_ACCENT[goal.goal_type]
 
@@ -169,12 +174,12 @@ export function GoalNotesModal({ goal, onClose }: GoalNotesModalProps) {
       <div
         style={{
           position: 'fixed',
-          top: '5vh',
+          top: isMobile ? '2vh' : '5vh',
           left: '50%',
           transform: 'translateX(-50%)',
-          width: '90vw',
+          width: isMobile ? '95vw' : '90vw',
           maxWidth: '800px',
-          height: '88vh',
+          height: isMobile ? '90vh' : '88vh',
           zIndex: 50,
         }}
       >
@@ -226,9 +231,12 @@ export function GoalNotesModal({ goal, onClose }: GoalNotesModalProps) {
                 border: 'none',
                 cursor: 'pointer',
                 color: 'rgba(255,255,255,0.4)',
-                padding: '4px',
+                padding: isMobile ? '14px' : '4px',
                 display: 'flex',
                 alignItems: 'center',
+                minHeight: isMobile ? '44px' : undefined,
+                minWidth: isMobile ? '44px' : undefined,
+                justifyContent: 'center',
               }}
             >
               <X size={16} />

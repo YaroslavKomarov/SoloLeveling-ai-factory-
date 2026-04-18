@@ -219,6 +219,37 @@ select {
 }
 
 /* ============================================================
+   PWA — Safe Area Insets (notch / dynamic island / home indicator)
+   ============================================================ */
+.app-content-wrapper {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@supports (padding: env(safe-area-inset-left)) {
+  .app-content-wrapper {
+    padding-left: calc(2rem + env(safe-area-inset-left));
+    padding-right: calc(2rem + env(safe-area-inset-right));
+  }
+
+  @media (max-width: 768px) {
+    .app-content-wrapper {
+      padding-left: calc(1rem + env(safe-area-inset-left));
+      padding-right: calc(1rem + env(safe-area-inset-right));
+    }
+  }
+}
+
+/* ============================================================
+   PWA — Mobile Touch Targets (≥44px)
+   ============================================================ */
+@media (max-width: 768px) {
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* ============================================================
    Accessibility — Reduced Motion
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {

@@ -1137,7 +1137,7 @@ export function GoalExpertPanel({ goalId, initialTaskSession }: GoalExpertPanelP
     <div
       style={{
         display: 'flex',
-        height: '600px',
+        height: '100%',
         border: '1px solid rgba(255,255,255,0.06)',
         backgroundColor: 'rgba(10,12,16,0.6)',
         position: 'relative',
