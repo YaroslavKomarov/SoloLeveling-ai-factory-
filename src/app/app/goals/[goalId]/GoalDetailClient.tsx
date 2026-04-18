@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -24,17 +24,51 @@ const logger = createLogger('GoalDetailClient')
 // ---------------------------------------------------------------
 
 /**
- * Computes overall goal progress as a percentage [0, 100].
- * Primary:  completed tasks / total tasks (quest.current_value is not auto-updated
- *           by task completion, so task-based tracking is the only reliable metric).
- * Fallback: quest-based (sum current_value / sum target_value) when no tasks exist
- *           (e.g. goal was just created, planning hasn't run yet).
+ * Groups tasks by quest_id, deduplicating by title (Ebbinghaus repetitions).
+ * Tasks arrive pre-sorted by order_index from getTasksByGoalOrdered — first-seen is kept.
+ * null quest_id tasks are excluded.
+ */
+export function groupTasksByQuest(tasks: TaskRow[]): Record<string, TaskRow[]> {
+  const byQuest: Record<string, Map<string, TaskRow>> = {}
+  for (const task of tasks) {
+    if (!task.quest_id) continue
+    if (!byQuest[task.quest_id]) byQuest[task.quest_id] = new Map()
+    const map = byQuest[task.quest_id]!
+    const existing = map.get(task.title)
+    if (!existing) {
+      map.set(task.title, task)
+    }
+  }
+  const result: Record<string, TaskRow[]> = {}
+  for (const [questId, map] of Object.entries(byQuest)) {
+    result[questId] = Array.from(map.values())
+  }
+  return result
+}
+
+/**
+ * Computes overall goal progress as mean of per-KR progress values [0, 100].
+ * Per-KR: completedUnique / totalUnique * 100 (unique = deduplicated by title).
+ * Fallback: quest-based (sum current_value / sum target_value) when no tasks exist.
  */
 export function calculateGoalProgress(quests: QuestRow[], allTasks: TaskRow[] = []): number {
-  const total = allTasks.length
-  if (total > 0) {
-    const completed = allTasks.filter((t) => t.status === 'completed').length
-    return Math.min(100, (completed / total) * 100)
+  if (allTasks.length > 0) {
+    const tasksByQuest = groupTasksByQuest(allTasks)
+    const questsWithTasks = quests.filter((q) => (tasksByQuest[q.id]?.length ?? 0) > 0)
+    if (questsWithTasks.length === 0) return 0
+    const krProgresses = questsWithTasks.map((q) => {
+      const uniqueTasks = tasksByQuest[q.id] ?? []
+      const totalUnique = uniqueTasks.length
+      const completedUnique = uniqueTasks.filter((t) => t.status === 'completed').length
+      return totalUnique > 0 ? (completedUnique / totalUnique) * 100 : 0
+    })
+    const mean = krProgresses.reduce((acc, v) => acc + v, 0) / krProgresses.length
+    logger.debug('[calculateGoalProgress] KR breakdown', {
+      krCount: questsWithTasks.length,
+      krProgresses,
+      mean,
+    })
+    return Math.min(100, mean)
   }
   // Fallback: quest-based (manual KR tracking)
   const scorableQuests = quests.filter((q) => q.target_value > 0)
@@ -44,32 +78,6 @@ export function calculateGoalProgress(quests: QuestRow[], allTasks: TaskRow[] = 
     return Math.min(100, sumTarget > 0 ? (sumCurrent / sumTarget) * 100 : 0)
   }
   return 0
-}
-
-/**
- * Groups tasks by quest_id, deduplicating regular tasks by title
- * (Ebbinghaus repetitions produce multiple rows with the same title).
- * Keeps the earliest scheduled_date for ordering; null quest_id tasks are excluded.
- */
-export function groupTasksByQuest(tasks: TaskRow[]): Record<string, TaskRow[]> {
-  const byQuest: Record<string, Map<string, TaskRow>> = {}
-  for (const task of tasks) {
-    if (!task.quest_id) continue
-    if (!byQuest[task.quest_id]) byQuest[task.quest_id] = new Map()
-    const map = byQuest[task.quest_id]
-    const existing = map.get(task.title)
-    // Keep the entry with the earliest scheduled_date
-    if (!existing || task.scheduled_date < existing.scheduled_date) {
-      map.set(task.title, task)
-    }
-  }
-  const result: Record<string, TaskRow[]> = {}
-  for (const [questId, map] of Object.entries(byQuest)) {
-    result[questId] = Array.from(map.values()).sort((a, b) =>
-      a.scheduled_date.localeCompare(b.scheduled_date)
-    )
-  }
-  return result
 }
 
 // ---------------------------------------------------------------
@@ -136,10 +144,11 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [isCancelling, setIsCancelling] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
 
-  // Tab state — controlled by URL query param
+  // Tab state — controlled by URL query param (expert tab removed; falls through to 'goal')
   const rawTab = searchParams.get('tab')
-  const tab = rawTab === 'expert' ? 'expert' : rawTab === 'notes' ? 'notes' : 'goal'
+  const tab = rawTab === 'notes' ? 'notes' : 'goal'
 
   // Initial task session from query params (when redirected from strategic task start)
   const newTaskId = searchParams.get('newTaskSession')
@@ -155,8 +164,9 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
   useEffect(() => {
     if (initialTaskSession) {
       logger.debug('[GoalDetailClient] newTaskSession param detected', { taskId: initialTaskSession.taskId })
+      setChatOpen(true)
     }
-  }, [initialTaskSession])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => setMounted(true), [])
 
@@ -165,6 +175,20 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
   const tasksByDate = groupByDate(upcomingTasks)
   const dates = Array.from(tasksByDate.keys()).sort()
   const tasksByQuestId = groupTasksByQuest(allTasks)
+
+  const questTaskCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        quests.map((q) => {
+          const uniqueTasks = tasksByQuestId[q.id] ?? []
+          return [q.id, {
+            total: uniqueTasks.length,
+            done: uniqueTasks.filter((t) => t.status === 'completed').length,
+          }]
+        })
+      ),
+    [quests, tasksByQuestId]
+  )
 
   const overallProgress = calculateGoalProgress(quests, allTasks)
   const goalInactive = goal.status === 'failed' || goal.status === 'cancelled'
@@ -300,18 +324,17 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
             </button>
             <button
               onClick={() => {
-                const params = new URLSearchParams(searchParams.toString())
-                params.set('tab', 'expert')
-                router.push(`/app/goals/${goal.id}?${params.toString()}`)
+                logger.debug('[GoalDetailClient] chat modal opened', { goalId: goal.id })
+                setChatOpen(true)
               }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '0.375rem',
                 background: 'none',
-                border: tab === 'expert' ? `1px solid ${TYPE_COLOR[goal.goal_type]}` : `1px solid ${TYPE_COLOR[goal.goal_type]}44`,
+                border: `1px solid ${TYPE_COLOR[goal.goal_type]}44`,
                 cursor: 'pointer',
-                color: tab === 'expert' ? TYPE_COLOR[goal.goal_type] : `${TYPE_COLOR[goal.goal_type]}aa`,
+                color: `${TYPE_COLOR[goal.goal_type]}aa`,
                 fontFamily: 'Cinzel, serif',
                 fontSize: '0.65rem',
                 letterSpacing: '0.08em',
@@ -321,7 +344,7 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
               }}
             >
               <MessageSquare size={12} />
-              Expert Chat
+              Chat
             </button>
             <button
               onClick={() => {
@@ -378,18 +401,6 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
           <Progress value={overallProgress} max={100} color={progressColor} height="4px" />
         </div>
       </motion.div>
-
-      {/* Expert Chat tab */}
-      {tab === 'expert' && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.2 }}
-          style={{ marginBottom: '2rem' }}
-        >
-          <GoalExpertPanel goalId={goal.id} initialTaskSession={initialTaskSession} />
-        </motion.div>
-      )}
 
       {/* Notes tab */}
       {tab === 'notes' && (
@@ -475,6 +486,8 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
                   key={quest.id}
                   quest={quest}
                   tasks={tasksByQuestId[quest.id] ?? []}
+                  doneTasks={questTaskCounts[quest.id]?.done ?? 0}
+                  totalTasks={questTaskCounts[quest.id]?.total ?? 0}
                 />
               ))
             )}
@@ -571,6 +584,72 @@ export function GoalDetailClient({ goal, quests, allTasks, sphereName }: GoalDet
             Cancel Goal
           </Button>
         </div>
+      )}
+
+      {/* Chat modal — rendered via portal */}
+      {mounted && createPortal(
+        <AnimatePresence>
+          {chatOpen && (
+            <>
+              <motion.div
+                key="chat-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => {
+                  logger.debug('[GoalDetailClient] chat modal closed', { goalId: goal.id })
+                  setChatOpen(false)
+                }}
+                style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 40 }}
+              />
+              <div
+                style={{
+                  position: 'fixed',
+                  top: '50%',
+                  left: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: '90%',
+                  maxWidth: '900px',
+                  height: '85vh',
+                  zIndex: 50,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  backgroundColor: 'rgba(10,12,16,0.97)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                }}
+              >
+                <motion.div
+                  key="chat-modal"
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+                >
+                  {/* Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+                    <h3 style={{ fontFamily: 'Cinzel, serif', fontSize: '0.875rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#ffffff', margin: 0 }}>
+                      Chats
+                    </h3>
+                    <button
+                      onClick={() => {
+                        logger.debug('[GoalDetailClient] chat modal closed', { goalId: goal.id })
+                        setChatOpen(false)
+                      }}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: 0 }}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                  {/* Body */}
+                  <div style={{ flex: 1, overflow: 'hidden' }}>
+                    <GoalExpertPanel goalId={goal.id} initialTaskSession={initialTaskSession} />
+                  </div>
+                </motion.div>
+              </div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
       )}
 
       {/* Cancel confirmation modal — rendered via portal to escape PageTransition stacking context */}
