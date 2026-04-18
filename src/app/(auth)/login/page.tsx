@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { loginSchema, type LoginData } from '@/lib/auth/validation'
-import { loginAction, googleOAuthAction } from '@/lib/auth/actions'
+import { loginAction } from '@/lib/auth/actions'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent } from '@/components/ui/Card'
@@ -39,6 +40,33 @@ export default function LoginPage() {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [serverError, setServerError] = useState<string | null>(null)
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false)
+
+  const handleGoogleSignIn = async () => {
+    logger.info('[FIX] Google OAuth: initiating client-side sign in')
+    setIsGoogleLoading(true)
+    setServerError(null)
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/api/auth/callback`,
+        },
+      })
+      if (error) {
+        logger.error('[FIX] Google OAuth error', { error: error.message })
+        setServerError('Google sign-in failed. Please try again.')
+        setIsGoogleLoading(false)
+      }
+      // on success the browser is redirected to Google — no further action needed
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      logger.error('[FIX] Google OAuth unexpected error', { error: message })
+      setServerError('An unexpected error occurred')
+      setIsGoogleLoading(false)
+    }
+  }
 
   const {
     register,
@@ -202,17 +230,17 @@ export default function LoginPage() {
             <div style={{ flex: 1, height: '1px', backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
           </div>
 
-          <form action={googleOAuthAction}>
-            <Button
-              type="submit"
-              variant="default"
-              size="default"
-              style={{ width: '100%', gap: '0.5rem' }}
-            >
-              <GoogleIcon />
-              Continue with Google
-            </Button>
-          </form>
+          <Button
+            type="button"
+            variant="default"
+            size="default"
+            isLoading={isGoogleLoading}
+            onClick={handleGoogleSignIn}
+            style={{ width: '100%', gap: '0.5rem' }}
+          >
+            <GoogleIcon />
+            Continue with Google
+          </Button>
 
           <p
             style={{

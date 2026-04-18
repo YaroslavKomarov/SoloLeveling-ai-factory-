@@ -27,19 +27,22 @@ export async function GET(request: NextRequest) {
   logger.info('session established')
 
   // Check onboarding status
-  const { data: { user } } = await supabase.auth.getUser()
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-  if (user) {
-    const { data: profile } = await supabase
-      .from('users')
-      .select('onboarding_completed')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    const redirectPath = profile?.onboarding_completed ? next : '/onboarding'
-    logger.info('redirect', { to: redirectPath, userId: user.id })
-    return NextResponse.redirect(`${origin}${redirectPath}`)
+  if (!user) {
+    logger.error('[FIX] OAuth callback: getUser() returned null after successful exchange', {
+      userError: userError?.message,
+    })
+    return NextResponse.redirect(`${origin}/login?error=session_lost`)
   }
 
-  return NextResponse.redirect(`${origin}/login`)
+  const { data: profile } = await supabase
+    .from('users')
+    .select('onboarding_completed')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  const redirectPath = profile?.onboarding_completed ? next : '/onboarding'
+  logger.info('redirect', { to: redirectPath, userId: user.id })
+  return NextResponse.redirect(`${origin}${redirectPath}`)
 }
