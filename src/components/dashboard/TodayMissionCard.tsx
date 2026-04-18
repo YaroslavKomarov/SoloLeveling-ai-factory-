@@ -9,6 +9,10 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card'
 import { Progress } from '@/components/ui/Progress'
 import { fadeInUp } from '@/lib/animations/variants'
 import { useMotionSafe } from '@/lib/animations/useMotionSafe'
+import { useIsMobile } from '@/hooks/useIsMobile'
+import { createLogger } from '@/lib/logger'
+
+const logger = createLogger('TodayMissionCard')
 
 interface TodayMissionCardProps {
   totalTasks: number
@@ -26,7 +30,9 @@ export function TodayMissionCard({
   fatigue,
 }: TodayMissionCardProps) {
   const variants = useMotionSafe(fadeInUp)
+  const isMobile = useIsMobile()
   const allComplete = totalTasks > 0 && completedTasks === totalTasks
+  logger.debug('rendering stats grid', { columnCount: isMobile ? 1 : 3 })
 
   return (
     <motion.div variants={variants} initial="hidden" animate="visible">
@@ -39,7 +45,7 @@ export function TodayMissionCard({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr 1fr',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
               gap: '0.75rem',
               marginBottom: '1.25rem',
             }}

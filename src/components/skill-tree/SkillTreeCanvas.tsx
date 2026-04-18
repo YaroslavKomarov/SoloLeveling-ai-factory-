@@ -182,7 +182,7 @@ function ActiveGoalNode({
       </div>
 
       {/* Tooltip */}
-      <div className="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 bg-white/10 border border-white/20 px-2 md:px-3 py-1 text-[10px] md:text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none backdrop-blur-sm z-50 max-w-[150px] truncate">
+      <div className="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 bg-white/10 border border-white/20 px-2 md:px-3 py-1 text-[10px] md:text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none backdrop-blur-sm z-50 max-w-[calc(100vw-2rem)] truncate">
         {goal.title}
       </div>
     </motion.div>
@@ -212,7 +212,7 @@ function CompletedGoalNode({
       </div>
 
       {/* Tooltip */}
-      <div className="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 bg-white/10 border border-white/20 px-2 md:px-3 py-1 text-[10px] md:text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none backdrop-blur-sm z-50 max-w-[150px] truncate">
+      <div className="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 bg-white/10 border border-white/20 px-2 md:px-3 py-1 text-[10px] md:text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none backdrop-blur-sm z-50 max-w-[calc(100vw-2rem)] truncate">
         ✓ {goal.title}
       </div>
     </motion.div>
@@ -262,7 +262,7 @@ function InactiveGoalNode({
       </div>
 
       {/* Tooltip */}
-      <div className="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 bg-white/10 border border-white/20 px-2 md:px-3 py-1 text-[10px] md:text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none backdrop-blur-sm z-50 max-w-[150px] truncate">
+      <div className="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 bg-white/10 border border-white/20 px-2 md:px-3 py-1 text-[10px] md:text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none backdrop-blur-sm z-50 max-w-[calc(100vw-2rem)] truncate">
         <span style={{ textDecoration: 'line-through' }}>
           {isFailed ? '✕ ' : '○ '}{goal.title}
         </span>
@@ -298,7 +298,7 @@ function PlannedGoalNode({
       </div>
 
       {/* Tooltip */}
-      <div className="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 bg-white/10 border border-white/20 px-2 md:px-3 py-1 text-[10px] md:text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none backdrop-blur-sm z-50 max-w-[150px] truncate">
+      <div className="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 bg-white/10 border border-white/20 px-2 md:px-3 py-1 text-[10px] md:text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none backdrop-blur-sm z-50 max-w-[calc(100vw-2rem)] truncate">
         {goal.title}
       </div>
     </motion.div>
