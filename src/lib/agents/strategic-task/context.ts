@@ -126,9 +126,9 @@ export async function buildStrategicTaskContext(
 
   // RAG search scoped to goal notes
   let ragSummary = ''
-  const openAiKey = process.env.OPENAI_API_KEY
+  const openAiKey = process.env.OPENROUTER_API_KEY
   if (!openAiKey) {
-    logger.warn('[strategic-task/context] RAG skipped — OPENAI_API_KEY not set')
+    logger.warn('[strategic-task/context] RAG skipped — OPENROUTER_API_KEY not set')
   } else {
     logger.debug('[strategic-task/context] ragSearch starting', { sphereName: sphere.name, goalTitle: goal.title })
     try {
@@ -136,10 +136,10 @@ export async function buildStrategicTaskContext(
       const pathPrefix = `${sphere.name}/${goal.title}/`
 
       // Generate embedding
-      const embeddingRes = await fetch('https://api.openai.com/v1/embeddings', {
+      const embeddingRes = await fetch('https://openrouter.ai/api/v1/embeddings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openAiKey}` },
-        body: JSON.stringify({ model: 'text-embedding-3-small', input: queryText }),
+        body: JSON.stringify({ model: 'openai/text-embedding-3-small', input: queryText }),
       })
 
       if (!embeddingRes.ok) {

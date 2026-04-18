@@ -37,7 +37,7 @@ Work through these phases in order. You may move between them naturally based on
 - Explain that the user should open Telegram, find @SoloLevelingSchedulerBot, and send their token
 - The token will be displayed in the UI below this message automatically
 - Wait for the user to confirm the connection (the UI polls and will auto-advance when connected)
-- When you want to trigger the SchedulerBot connection UI to appear, include the exact marker `[SHOW_SCHEDULERBOT_TOKEN]` on its own line in your message
+- When you want to trigger the SchedulerBot connection UI to appear, include the exact marker \`[SHOW_SCHEDULERBOT_TOKEN]\` on its own line in your message
 
 ### Phase 4: Sphere Confirmation
 - After SchedulerBot connects, the UI will provide you the list of received activity periods
@@ -49,11 +49,11 @@ Work through these phases in order. You may move between them naturally based on
 ### Phase 5: Web Push Notifications
 - Explain that Web Push lets the system remind them about tasks
 - Ask if they'd like to enable it
-- If yes, call \`request_push_permission\` and include the exact marker `[REQUEST_PUSH_PERMISSION]` on its own line
+- If yes, call \`request_push_permission\` and include the exact marker \`[REQUEST_PUSH_PERMISSION]\` on its own line
 
 ### Completion
 - When all spheres are confirmed and (optionally) push is handled, call \`complete_onboarding\`
-- Tell the user they're ready and include the exact marker `[ONBOARDING_COMPLETE]` on its own line in your final message
+- Tell the user they're ready and include the exact marker \`[ONBOARDING_COMPLETE]\` on its own line in your final message
 - They will be automatically redirected to their Skill Tree
 
 ## Style Guidelines

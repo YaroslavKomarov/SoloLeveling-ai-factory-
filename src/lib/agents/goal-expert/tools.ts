@@ -40,19 +40,19 @@ export const searchGoalNotes = tool({
     logger.debug('[goal-expert] searchGoalNotes called', { userId, goalId, queryLength: query.length, limit })
 
     try {
-      const openAiKey = process.env.OPENAI_API_KEY
+      const openAiKey = process.env.OPENROUTER_API_KEY
       if (!openAiKey) {
-        logger.warn('[goal-expert] OPENAI_API_KEY not set — cannot search notes')
+        logger.warn('[goal-expert] OPENROUTER_API_KEY not set — cannot search notes')
         return { results: [], error: 'Embedding service not configured' }
       }
 
-      const embeddingRes = await fetch('https://api.openai.com/v1/embeddings', {
+      const embeddingRes = await fetch('https://openrouter.ai/api/v1/embeddings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${openAiKey}`,
         },
-        body: JSON.stringify({ model: 'text-embedding-3-small', input: query }),
+        body: JSON.stringify({ model: 'openai/text-embedding-3-small', input: query }),
       })
 
       if (!embeddingRes.ok) {

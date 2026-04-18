@@ -105,18 +105,18 @@ export async function buildCorrectionContext(
 
   // RAG search scoped to goal notes
   let ragSummary = ''
-  const openAiKey = process.env.OPENAI_API_KEY
+  const openAiKey = process.env.OPENROUTER_API_KEY
   if (!openAiKey) {
-    logger.warn('RAG skipped — OPENAI_API_KEY not set')
+    logger.warn('RAG skipped — OPENROUTER_API_KEY not set')
   } else {
     try {
       const queryText = task.description ?? task.title
       const pathPrefix = `${sphere.name}/${goal.title}/`
 
-      const embeddingRes = await fetch('https://api.openai.com/v1/embeddings', {
+      const embeddingRes = await fetch('https://openrouter.ai/api/v1/embeddings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${openAiKey}` },
-        body: JSON.stringify({ model: 'text-embedding-3-small', input: queryText }),
+        body: JSON.stringify({ model: 'openai/text-embedding-3-small', input: queryText }),
       })
 
       if (!embeddingRes.ok) {
