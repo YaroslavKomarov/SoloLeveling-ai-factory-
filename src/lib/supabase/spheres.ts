@@ -13,6 +13,32 @@ type DB = SupabaseClient<Database>
 export async function createSphere(supabase: DB, insert: SphereInsert): Promise<SphereRow> {
   logger.debug('createSphere', { userId: insert.user_id, name: insert.name })
 
+  // Unique name guard
+  const { data: nameConflict } = await supabase
+    .from('spheres')
+    .select('id')
+    .eq('user_id', insert.user_id)
+    .eq('name', insert.name)
+    .maybeSingle()
+  if (nameConflict) {
+    logger.warn('[createSphere] name conflict', { userId: insert.user_id, name: insert.name })
+    throw Object.assign(new Error('Sphere name already exists'), { code: 409 })
+  }
+
+  // Unique period guard
+  if (insert.period_id) {
+    const { data: periodConflict } = await supabase
+      .from('spheres')
+      .select('id')
+      .eq('user_id', insert.user_id)
+      .eq('period_id', insert.period_id)
+      .maybeSingle()
+    if (periodConflict) {
+      logger.warn('[createSphere] period conflict', { userId: insert.user_id, period_id: insert.period_id })
+      throw Object.assign(new Error('Period already mapped to another sphere'), { code: 409 })
+    }
+  }
+
   const { data, error } = await supabase
     .from('spheres')
     .insert(insert)

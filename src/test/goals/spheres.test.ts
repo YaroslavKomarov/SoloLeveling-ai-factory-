@@ -76,7 +76,21 @@ function buildSimpleMock(data: unknown, error: unknown = null): DB {
 describe('createSphere', () => {
   it('returns created sphere row on success', async () => {
     const sphere = makeSphere()
-    const supabase = buildSimpleMock(sphere)
+    // maybeSingle returns null (no conflict), single returns sphere (insert result)
+    const chain = {
+      insert: vi.fn(),
+      select: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      eq: vi.fn(),
+      order: vi.fn(),
+      single: vi.fn().mockResolvedValue({ data: sphere, error: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    }
+    for (const key of ['insert', 'select', 'update', 'delete', 'eq', 'order']) {
+      ;(chain as Record<string, unknown>)[key] = vi.fn().mockReturnValue(chain)
+    }
+    const supabase = { from: vi.fn().mockReturnValue(chain) } as unknown as DB
     const insert: SphereInsert = { user_id: 'user-1', name: 'Work', icon: 'briefcase', order_index: 0 }
 
     const result = await createSphere(supabase, insert)
@@ -86,7 +100,21 @@ describe('createSphere', () => {
   })
 
   it('throws on DB error', async () => {
-    const supabase = buildSimpleMock(null, { message: 'unique violation' })
+    // maybeSingle returns null (conflict checks pass), single returns DB error
+    const chain = {
+      insert: vi.fn(),
+      select: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      eq: vi.fn(),
+      order: vi.fn(),
+      single: vi.fn().mockResolvedValue({ data: null, error: { message: 'unique violation' } }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    }
+    for (const key of ['insert', 'select', 'update', 'delete', 'eq', 'order']) {
+      ;(chain as Record<string, unknown>)[key] = vi.fn().mockReturnValue(chain)
+    }
+    const supabase = { from: vi.fn().mockReturnValue(chain) } as unknown as DB
     await expect(
       createSphere(supabase, { user_id: 'u', name: 'Work', icon: 'briefcase', order_index: 0 })
     ).rejects.toThrow('unique violation')

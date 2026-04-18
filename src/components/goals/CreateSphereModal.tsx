@@ -11,9 +11,13 @@ import * as Icons from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { createSphere } from '@/lib/supabase/spheres'
+import { getActivityPeriodsByUser } from '@/lib/supabase/activity-periods'
 import { createClient } from '@/lib/supabase/client'
+import { createLogger } from '@/lib/logger'
 import { useGoalsStore } from '@/store/goals'
-import type { SphereRow } from '@/lib/supabase/types'
+import type { ActivityPeriodRow, SphereRow } from '@/lib/supabase/types'
+
+const logger = createLogger('CreateSphereModal')
 
 // Curated set of Lucide icons for spheres
 const SPHERE_ICONS = [
@@ -22,10 +26,16 @@ const SPHERE_ICONS = [
   'pencil', 'flask-conical', 'leaf', 'users', 'home', 'rocket',
 ] as const
 
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+function formatDays(days: number[]): string {
+  return days.map(d => DAY_NAMES[d] ?? d).join(', ')
+}
+
 const schema = z.object({
   name: z.string().min(1, 'Name is required').max(50, 'Name too long'),
   description: z.string().max(200, 'Description too long').optional(),
   icon: z.string().min(1, 'Select an icon'),
+  period_id: z.string().min(1, 'Select an activity period'),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -34,6 +44,7 @@ interface CreateSphereModalProps {
   isOpen: boolean
   onClose: () => void
   userId: string
+  existingSpheres: SphereRow[]
 }
 
 function LucideIcon({ name, size = 18 }: { name: string; size?: number }) {
@@ -44,21 +55,40 @@ function LucideIcon({ name, size = 18 }: { name: string; size?: number }) {
   return <Icon size={size} />
 }
 
-export function CreateSphereModal({ isOpen, onClose, userId }: CreateSphereModalProps) {
+export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: CreateSphereModalProps) {
   const addSphere = useGoalsStore(s => s.addSphere)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [mounted, setMounted] = useState(false)
+  const [allPeriods, setAllPeriods] = useState<ActivityPeriodRow[]>([])
+  const [periodsLoading, setPeriodsLoading] = useState(true)
 
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const supabase = createClient()
+    setPeriodsLoading(true)
+    getActivityPeriodsByUser(supabase, userId)
+      .then(periods => {
+        logger.debug('[CreateSphereModal] loaded activity periods', { count: periods.length })
+        setAllPeriods(periods)
+      })
+      .catch(err => logger.error('[CreateSphereModal] failed to load periods', { error: (err as Error).message }))
+      .finally(() => setPeriodsLoading(false))
+  }, [isOpen, userId])
+
+  const occupiedPeriodIds = new Set(existingSpheres.map(s => s.period_id).filter(Boolean))
+  const availablePeriods = allPeriods.filter(p => !occupiedPeriodIds.has(p.id))
 
   const {
     register,
     handleSubmit,
     watch,
     setValue,
+    setError,
     formState: { errors },
     reset,
   } = useForm<FormValues>({
@@ -75,9 +105,16 @@ export function CreateSphereModal({ isOpen, onClose, userId }: CreateSphereModal
   }
 
   const onSubmit = async (values: FormValues) => {
-    if (process.env.NODE_ENV === 'development') {
-      console.debug('[CreateSphereModal] submitting', values)
+    // Client-side name uniqueness check
+    const nameExists = existingSpheres.some(
+      s => s.name.toLowerCase() === values.name.trim().toLowerCase()
+    )
+    if (nameExists) {
+      setError('name', { message: 'A sphere with this name already exists' })
+      return
     }
+
+    logger.debug('[CreateSphereModal] submitting', { name: values.name, period_id: values.period_id })
     setIsSubmitting(true)
     setSubmitError(null)
 
@@ -89,17 +126,31 @@ export function CreateSphereModal({ isOpen, onClose, userId }: CreateSphereModal
         description: values.description ?? null,
         icon: values.icon,
         order_index: 0,
+        period_id: values.period_id,
       })
       addSphere(sphere)
       handleClose()
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Failed to create sphere')
+      const code = (err as { code?: number }).code
+      setSubmitError(
+        code === 409
+          ? (err as Error).message
+          : 'Failed to create sphere'
+      )
     } finally {
       setIsSubmitting(false)
     }
   }
 
   if (!mounted) return null
+
+  const noPeriods = !periodsLoading && allPeriods.length === 0
+  const allOccupied = !periodsLoading && allPeriods.length > 0 && availablePeriods.length === 0
+  const periodSelectDisabled = periodsLoading || noPeriods || allOccupied
+
+  let periodHelperText: string | null = null
+  if (noPeriods) periodHelperText = 'Connect SchedulerBot during onboarding to get activity periods'
+  else if (allOccupied) periodHelperText = 'All activity periods are already mapped to spheres'
 
   return createPortal(
     <AnimatePresence>
@@ -121,7 +172,7 @@ export function CreateSphereModal({ isOpen, onClose, userId }: CreateSphereModal
             }}
           />
 
-          {/* Modal — outer div handles centering, inner motion.div handles animation */}
+          {/* Modal */}
           <div
             style={{
               position: 'fixed',
@@ -230,6 +281,50 @@ export function CreateSphereModal({ isOpen, onClose, userId }: CreateSphereModal
                 {errors.icon && (
                   <p style={{ fontSize: '0.875rem', color: '#ef4444', fontFamily: 'Cormorant, serif', margin: 0 }}>
                     {errors.icon.message}
+                  </p>
+                )}
+              </div>
+
+              {/* Activity Period */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem' }}>
+                <label style={{ fontFamily: 'Cinzel, serif', fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
+                  Activity Period
+                </label>
+                <select
+                  {...register('period_id')}
+                  disabled={periodSelectDisabled}
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    border: `1px solid ${errors.period_id ? '#ef4444' : 'rgba(255,255,255,0.15)'}`,
+                    color: periodSelectDisabled ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.85)',
+                    padding: '0.5rem 0.75rem',
+                    fontSize: '0.875rem',
+                    fontFamily: 'Cormorant, Georgia, serif',
+                    cursor: periodSelectDisabled ? 'not-allowed' : 'pointer',
+                    width: '100%',
+                  }}
+                >
+                  {periodsLoading ? (
+                    <option value="" disabled>Loading periods…</option>
+                  ) : (
+                    <>
+                      <option value="">Select a period…</option>
+                      {availablePeriods.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — {formatDays(p.days_of_week)} {p.start_time.slice(0, 5)}–{p.end_time.slice(0, 5)}
+                        </option>
+                      ))}
+                    </>
+                  )}
+                </select>
+                {periodHelperText && (
+                  <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'Cormorant, serif', margin: 0 }}>
+                    {periodHelperText}
+                  </p>
+                )}
+                {errors.period_id && (
+                  <p style={{ fontSize: '0.875rem', color: '#ef4444', fontFamily: 'Cormorant, serif', margin: 0 }}>
+                    {errors.period_id.message}
                   </p>
                 )}
               </div>

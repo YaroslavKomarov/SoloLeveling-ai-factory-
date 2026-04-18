@@ -23,11 +23,29 @@ const RADIUS_SM = 25                          // mobile progress ring radius
 const RADIUS_MD = 36                          // desktop progress ring radius
 const CIRCUM_SM = 2 * Math.PI * RADIUS_SM    // ≈ 157.08
 const CIRCUM_MD = 2 * Math.PI * RADIUS_MD    // ≈ 226.19
-const LOCKED_SLOTS = 2                        // future empty slots per sphere
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type GoalTaskStats = Record<string, { total: number; completed: number }>
+
+export type CategorizedGoals = {
+  active:    GoalRow[]
+  planned:   GoalRow[]
+  completed: GoalRow[]  // completed | completed_on_time
+  inactive:  GoalRow[]  // failed | cancelled | missed
+}
+
+export function categorizeGoalsByStatus(goals: GoalRow[]): CategorizedGoals {
+  const byDateDesc = (a: GoalRow, b: GoalRow) =>
+    new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+
+  return {
+    active:    goals.filter(g => g.status === 'active').sort(byDateDesc),
+    planned:   goals.filter(g => g.status === 'planned').sort(byDateDesc),
+    completed: goals.filter(g => g.status === 'completed' || g.status === 'completed_on_time').sort(byDateDesc),
+    inactive:  goals.filter(g => g.status === 'failed' || g.status === 'cancelled' || g.status === 'missed').sort(byDateDesc),
+  }
+}
 
 interface SkillTreeCanvasProps {
   spheres: SphereRow[]
@@ -212,7 +230,7 @@ function InactiveGoalNode({
   onClick: () => void
 }) {
   const isFailed = goal.status === 'failed'
-  // Failed = red cross; Cancelled = dim white cross (still clearly ✕, not —)
+  // Failed = red cross; cancelled and missed = dim white cross
   const borderColor = isFailed ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.25)'
   const crossColor  = isFailed ? '#ef4444'              : 'rgba(255,255,255,0.55)'
 
@@ -253,12 +271,37 @@ function InactiveGoalNode({
   )
 }
 
-/** Locked future slot — dimmed empty circle */
-function LockedSlot() {
+/** Planned goal — dim circle, future goal awaiting activation */
+function PlannedGoalNode({
+  goal,
+  delay,
+  onClick,
+}: {
+  goal: GoalRow
+  delay: number
+  onClick: () => void
+}) {
   return (
-    <div className="relative flex-shrink-0 w-14 h-14 md:w-20 md:h-20 rounded-full border border-white/10 bg-transparent flex items-center justify-center opacity-30">
-      <div className="w-2 h-2 md:w-3 md:h-3 border border-white/20 rounded-full" />
-    </div>
+    <motion.div
+      initial={{ scale: 0 }}
+      animate={{ scale: 1 }}
+      transition={{ delay }}
+      className="relative flex-shrink-0 group cursor-pointer"
+      style={{ opacity: 0.5 }}
+      onClick={onClick}
+    >
+      <div
+        className="w-14 h-14 md:w-20 md:h-20 rounded-full flex items-center justify-center"
+        style={{ border: '2px solid rgba(255,255,255,0.2)' }}
+      >
+        <div className="w-2 h-2 border border-white/20 rounded-full" />
+      </div>
+
+      {/* Tooltip */}
+      <div className="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 bg-white/10 border border-white/20 px-2 md:px-3 py-1 text-[10px] md:text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none backdrop-blur-sm z-50 max-w-[150px] truncate">
+        {goal.title}
+      </div>
+    </motion.div>
   )
 }
 
@@ -283,33 +326,49 @@ function SphereBranch({
 }) {
   const IconComponent = getLucideIcon(sphere.icon)
 
-  // Sort all goals chronologically descending (newest first = leftmost after add button)
-  const byDateDesc = (a: GoalRow, b: GoalRow) =>
-    new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+  const { active, planned, completed, inactive } = categorizeGoalsByStatus(goals)
+  const isAddBlocked = active.length > 0
 
-  const activeGoals   = [...goals].filter(g => g.status === 'active').sort(byDateDesc)
-  const completedGoals = [...goals].filter(g => g.status === 'completed').sort(byDateDesc)
-  const inactiveGoals  = [...goals].filter(g => g.status === 'failed' || g.status === 'cancelled').sort(byDateDesc)
+  logger.debug('[SphereBranch] status distribution', {
+    sphereId: sphere.id,
+    active: active.length,
+    planned: planned.length,
+    completed: completed.length,
+    inactive: inactive.length,
+  })
+
+  if (isAddBlocked) {
+    logger.debug('[SphereBranch] add goal blocked — active goal exists', { sphereId: sphere.id })
+  }
 
   // Build chain as flat element array to avoid React key/Fragment issues.
-  // Order: [+ add] → [active] → [completed, newest→oldest] → [failed/cancelled] → [locked]
+  // Order: [+ add] → [active] → [planned] → [completed, newest→oldest] → [inactive]
   const chainElements: React.ReactElement[] = []
 
-  // Add goal button
+  // Add goal button (blocked when active goal exists)
   chainElements.push(
-    <motion.button
-      key="add"
-      whileHover={{ scale: 1.1 }}
-      whileTap={{ scale: 0.9 }}
-      onClick={onAddGoal}
-      className="relative flex-shrink-0 w-14 h-14 md:w-20 md:h-20 rounded-full border-2 border-dashed border-white/30 hover:border-white/50 bg-transparent hover:bg-white/5 flex items-center justify-center transition-all group"
-    >
-      <Plus className="w-4 h-4 md:w-6 md:h-6 text-white/50 group-hover:text-white/80" />
-    </motion.button>,
+    <div key="add-wrapper" className="relative flex-shrink-0 group">
+      <motion.button
+        key="add"
+        whileHover={isAddBlocked ? {} : { scale: 1.1 }}
+        whileTap={isAddBlocked ? {} : { scale: 0.9 }}
+        onClick={isAddBlocked ? undefined : onAddGoal}
+        disabled={isAddBlocked}
+        className="relative flex-shrink-0 w-14 h-14 md:w-20 md:h-20 rounded-full border-2 border-dashed border-white/30 bg-transparent flex items-center justify-center transition-all group"
+        style={{ opacity: isAddBlocked ? 0.25 : 1, cursor: isAddBlocked ? 'not-allowed' : 'pointer' }}
+      >
+        <Plus className="w-4 h-4 md:w-6 md:h-6 text-white/50" />
+      </motion.button>
+      {isAddBlocked && (
+        <div className="absolute -top-10 md:-top-12 left-1/2 -translate-x-1/2 bg-white/10 border border-white/20 px-2 md:px-3 py-1 text-[10px] md:text-xs whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none backdrop-blur-sm z-50">
+          Complete the active goal first
+        </div>
+      )}
+    </div>,
   )
 
-  // Active goals first — animated connections
-  activeGoals.forEach((goal, i) => {
+  // Active goals — animated connections
+  active.forEach((goal, i) => {
     chainElements.push(<AnimatedConnection key={`ac-act-${goal.id}`} delay={i * 0.1} />)
     chainElements.push(
       <ActiveGoalNode
@@ -323,37 +382,44 @@ function SphereBranch({
     )
   })
 
-  // Completed goals (newest → oldest) — animated connections
-  completedGoals.forEach((goal, i) => {
-    chainElements.push(<AnimatedConnection key={`ac-comp-${goal.id}`} delay={(activeGoals.length + i) * 0.1} />)
+  // Planned goals — animated connections
+  planned.forEach((goal, i) => {
+    chainElements.push(<AnimatedConnection key={`ac-plan-${goal.id}`} delay={(active.length + i) * 0.1} />)
     chainElements.push(
-      <CompletedGoalNode
+      <PlannedGoalNode
         key={goal.id}
         goal={goal}
-        delay={(activeGoals.length + i) * 0.05 + 0.1}
+        delay={(active.length + i) * 0.05 + 0.05}
         onClick={() => onGoalClick(goal.id)}
       />,
     )
   })
 
-  // Failed / cancelled (newest → oldest) — static connections
-  inactiveGoals.forEach((goal, i) => {
+  // Completed goals (newest → oldest) — animated connections
+  completed.forEach((goal, i) => {
+    chainElements.push(<AnimatedConnection key={`ac-comp-${goal.id}`} delay={(active.length + planned.length + i) * 0.1} />)
+    chainElements.push(
+      <CompletedGoalNode
+        key={goal.id}
+        goal={goal}
+        delay={(active.length + planned.length + i) * 0.05 + 0.1}
+        onClick={() => onGoalClick(goal.id)}
+      />,
+    )
+  })
+
+  // Inactive (failed / cancelled / missed, newest → oldest) — static connections
+  inactive.forEach((goal, i) => {
     chainElements.push(<StaticConnection key={`sc-inact-${goal.id}`} />)
     chainElements.push(
       <InactiveGoalNode
         key={goal.id}
         goal={goal}
-        delay={(activeGoals.length + completedGoals.length + i) * 0.05 + 0.15}
+        delay={(active.length + planned.length + completed.length + i) * 0.05 + 0.15}
         onClick={() => onGoalClick(goal.id)}
       />,
     )
   })
-
-  // Locked future slots — static connections
-  for (let i = 0; i < LOCKED_SLOTS; i++) {
-    chainElements.push(<StaticConnection key={`sc-lock-${i}`} />)
-    chainElements.push(<LockedSlot key={`locked-${i}`} />)
-  }
 
   return (
     <div>
@@ -375,7 +441,7 @@ function SphereBranch({
           {sphere.name}
         </h3>
         <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', flexShrink: 0 }}>
-          {completedGoals.length} {completedGoals.length === 1 ? 'skill' : 'skills'}
+          {completed.length} {completed.length === 1 ? 'skill' : 'skills'}
         </span>
       </div>
 

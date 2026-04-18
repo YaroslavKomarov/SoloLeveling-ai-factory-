@@ -113,6 +113,7 @@ export function GoalsClient({
         isOpen={sphereModalOpen}
         onClose={() => setSphereModalOpen(false)}
         userId={userId}
+        existingSpheres={spheres}
       />
       <GoalCreationDialog />
     </div>
