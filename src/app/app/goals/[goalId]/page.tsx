@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getGoalWithQuests } from '@/lib/supabase/goals'
 import { getSphereById } from '@/lib/supabase/spheres'
-import { getTasksByGoal } from '@/lib/supabase/tasks'
+import { getTasksByGoalOrdered } from '@/lib/supabase/tasks'
 import { createLogger } from '@/lib/logger'
 import { GoalDetailClient } from './GoalDetailClient'
 
@@ -33,7 +33,7 @@ export default async function GoalDetailPage({ params }: Props) {
   // Load sphere name and all goal tasks in parallel
   const [sphere, allTasks] = await Promise.all([
     getSphereById(supabase, goal.sphere_id),
-    getTasksByGoal(supabase, goalId, user.id),
+    getTasksByGoalOrdered(supabase, goalId),
   ])
 
   logger.debug('goal loaded', {
