@@ -4,7 +4,7 @@
  * RagChatPanel — right panel chat interface for the knowledge RAG agent.
  * Uses custom fetch-based streaming (matching existing agent dialog patterns).
  */
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Trash2, Loader2 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
@@ -26,6 +26,8 @@ export function RagChatPanel() {
   const setChatMessages = useKnowledgeStore((s) => s.setChatMessages)
   const setIsChatLoading = useKnowledgeStore((s) => s.setIsChatLoading)
   const clearChat = useKnowledgeStore((s) => s.clearChat)
+  const notes = useKnowledgeStore((s) => s.notes)
+  const selectNote = useKnowledgeStore((s) => s.selectNote)
 
   const [inputValue, setInputValue] = useState('')
   const [streamingMessage, setStreamingMessage] = useState('')
@@ -133,6 +135,66 @@ export function RagChatPanel() {
     clearChat()
     setStreamingMessage('')
   }, [clearChat])
+
+  // Resolve note path to ID for clickable source links in RAG responses
+  const resolveNoteByPath = useCallback(
+    (path: string): string | null => {
+      const found = notes.find((n) => n.path === path || n.path === path.replace(/^\//, ''))
+      return found?.id ?? null
+    },
+    [notes]
+  )
+
+  const markdownComponents = useMemo(() => ({
+    a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { children?: React.ReactNode }) => {
+      if (href && !href.startsWith('http')) {
+        const noteId = resolveNoteByPath(href)
+        if (noteId) {
+          return (
+            <span
+              onClick={() => {
+                logger.debug('RAG source link clicked', { href, noteId })
+                selectNote(noteId)
+              }}
+              style={{
+                color: 'rgba(200,180,120,0.9)',
+                textDecoration: 'underline',
+                textDecorationColor: 'rgba(200,180,120,0.4)',
+                cursor: 'pointer',
+              }}
+              title="Open note"
+            >
+              {children}
+            </span>
+          )
+        }
+        // Path found in response but note not in local list yet — render dimmed
+        return (
+          <span
+            style={{
+              color: 'rgba(255,255,255,0.35)',
+              textDecoration: 'underline',
+              textDecorationStyle: 'dotted',
+            }}
+            title={`Note not loaded: ${href}`}
+          >
+            {children}
+          </span>
+        )
+      }
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: 'rgba(200,180,120,0.9)', textDecoration: 'underline', textDecorationColor: 'rgba(200,180,120,0.4)' }}
+          {...props}
+        >
+          {children}
+        </a>
+      )
+    },
+  }), [resolveNoteByPath, selectNote])
 
   return (
     <div
@@ -249,7 +311,7 @@ export function RagChatPanel() {
                 className={msg.role === 'assistant' ? 'rag-assistant-message' : undefined}
               >
                 {msg.role === 'assistant' ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                     {msg.content}
                   </ReactMarkdown>
                 ) : (
@@ -280,7 +342,7 @@ export function RagChatPanel() {
               }}
               className="rag-assistant-message"
             >
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {streamingMessage}
               </ReactMarkdown>
               <span
