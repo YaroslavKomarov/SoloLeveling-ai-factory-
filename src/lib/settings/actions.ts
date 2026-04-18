@@ -105,3 +105,68 @@ export async function updateRetroSettings(
     return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
   }
 }
+
+export async function togglePushNotifications(
+  enabled: boolean
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { success: false, error: 'Not authenticated' }
+
+    const db = supabase as any
+
+    const { error: updateError } = await db
+      .from('users')
+      .update({ push_notifications_enabled: enabled })
+      .eq('id', user.id)
+
+    if (updateError) {
+      logger.error('togglePushNotifications — update failed', { userId: user.id, error: updateError.message })
+      return { success: false, error: updateError.message }
+    }
+
+    if (!enabled) {
+      const { error: deleteError } = await db
+        .from('push_subscriptions')
+        .delete()
+        .eq('user_id', user.id)
+
+      if (deleteError) {
+        logger.warn('togglePushNotifications — failed to delete subscriptions', { userId: user.id, error: deleteError.message })
+      }
+    }
+
+    logger.info('push notifications toggled', { userId: user.id, enabled })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}
+
+export async function changeEmail(
+  newEmail: string
+): Promise<{ success: boolean; error?: string }> {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(newEmail)) {
+    return { success: false, error: 'Invalid email format' }
+  }
+
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return { success: false, error: 'Not authenticated' }
+
+    const { error } = await supabase.auth.updateUser({ email: newEmail })
+
+    if (error) {
+      logger.error('changeEmail — failed', { userId: user.id, error: error.message })
+      return { success: false, error: error.message }
+    }
+
+    logger.info('email change requested', { userId: user.id })
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' }
+  }
+}

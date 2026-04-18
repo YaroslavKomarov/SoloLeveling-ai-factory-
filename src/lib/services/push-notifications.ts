@@ -58,6 +58,19 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const supabase = createAdminClient() as any
+
+  // Check user-level push toggle before sending
+  const { data: userPref } = await supabase
+    .from('users')
+    .select('push_notifications_enabled')
+    .eq('id', userId)
+    .maybeSingle()
+
+  if (!userPref?.push_notifications_enabled) {
+    logger.debug('sendPushToUser — push disabled for user, skipping', { userId })
+    return
+  }
+
   const { data: subscriptions, error } = await supabase
     .from('push_subscriptions')
     .select('id, endpoint, p256dh, auth')

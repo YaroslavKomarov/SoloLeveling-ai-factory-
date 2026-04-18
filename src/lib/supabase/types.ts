@@ -20,6 +20,7 @@ export interface UserRow {
   onboarding_completed: boolean
   schedulerbot_token: string | null
   schedulerbot_connected: boolean
+  push_notifications_enabled: boolean
   created_at: string
   updated_at: string
 }
@@ -33,6 +34,7 @@ export type UserInsert = Omit<UserRow, 'created_at' | 'updated_at'> & {
   onboarding_completed?: boolean
   schedulerbot_token?: string | null
   schedulerbot_connected?: boolean
+  push_notifications_enabled?: boolean
 }
 
 export type UserUpdate = Partial<Omit<UserRow, 'id' | 'created_at'>>
