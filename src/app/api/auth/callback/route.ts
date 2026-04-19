@@ -36,6 +36,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/login?error=session_lost`)
   }
 
+  logger.info('[FIX] upsert user row as trigger fallback', { userId: user.id })
+  const { error: upsertError } = await supabase
+    .from('users')
+    .upsert(
+      { id: user.id, email: user.email ?? '' } as never,
+      { onConflict: 'id', ignoreDuplicates: true }
+    )
+  if (upsertError) {
+    logger.error('[FIX] upsert failed', { userId: user.id, error: upsertError.message })
+  }
+
   const { data: profile } = await supabase
     .from('users')
     .select('onboarding_completed')

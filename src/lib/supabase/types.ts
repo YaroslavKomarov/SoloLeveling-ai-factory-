@@ -18,6 +18,8 @@ export interface UserRow {
   retrospective_day: number | null
   retrospective_time: string | null
   onboarding_completed: boolean
+  onboarding_phase: string
+  onboarding_messages: unknown[]
   schedulerbot_token: string | null
   schedulerbot_connected: boolean
   push_notifications_enabled: boolean
@@ -32,6 +34,8 @@ export type UserInsert = Omit<UserRow, 'created_at' | 'updated_at'> & {
   activity_window_start?: string
   activity_window_end?: string
   onboarding_completed?: boolean
+  onboarding_phase?: string
+  onboarding_messages?: unknown[]
   schedulerbot_token?: string | null
   schedulerbot_connected?: boolean
   push_notifications_enabled?: boolean

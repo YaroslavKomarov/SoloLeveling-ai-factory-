@@ -157,7 +157,11 @@ export function buildCompleteOnboardingTool(supabase: DB, userId: string) {
       try {
         const { error } = await supabase
           .from('users')
-          .update({ onboarding_completed: true })
+          .update({
+            onboarding_completed: true,
+            onboarding_phase: 'complete',
+            onboarding_messages: [],
+          } as never)
           .eq('id', userId)
 
         if (error) {
@@ -165,7 +169,7 @@ export function buildCompleteOnboardingTool(supabase: DB, userId: string) {
           return { success: false, error: error.message }
         }
 
-        logger.info('onboarding completed', { userId })
+        logger.info('[FIX] onboarding completed — session cleared', { userId })
         return { success: true, signal: 'onboarding_complete' }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)

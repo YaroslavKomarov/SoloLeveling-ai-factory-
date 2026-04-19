@@ -272,17 +272,42 @@ export function OnboardingChat() {
   const setPeriods = useOnboardingStore((s) => s.setPeriods)
 
   const [inputValue, setInputValue] = useState('')
+  const [sessionLoaded, setSessionLoaded] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const pushHandledRef = useRef(false)
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Auto-scroll on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamingContent])
 
-  // Send initial greeting on mount; reset stale streaming state first
+  // Load session from DB on mount; fall through to greeting if empty
   useEffect(() => {
+    const store = useOnboardingStore.getState()
+    if (store.messages.length > 0) {
+      setSessionLoaded(true)
+      return
+    }
+    fetch('/api/onboarding/session')
+      .then((r) => r.json())
+      .then((data: { phase?: string; messages?: unknown[] }) => {
+        const msgs = data.messages as import('@/store/onboarding').ChatMessage[] | undefined
+        if (msgs && msgs.length > 0) {
+          for (const m of msgs) store.addMessage(m)
+          if (data.phase) store.setPhase(data.phase as import('@/store/onboarding').OnboardingPhase)
+          logger.debug('[FIX] session restored from DB', { messageCount: msgs.length, phase: data.phase })
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => setSessionLoaded(true))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Send initial greeting once session is loaded, but only if no messages exist
+  useEffect(() => {
+    if (!sessionLoaded) return
     const store = useOnboardingStore.getState()
     if (store.messages.length === 0) {
       if (store.isStreaming) {
@@ -292,7 +317,24 @@ export function OnboardingChat() {
       sendMessage('Привет!')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [sessionLoaded])
+
+  // Debounced save to DB whenever messages or phase change
+  useEffect(() => {
+    if (!sessionLoaded || messages.length === 0) return
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = setTimeout(() => {
+      fetch('/api/onboarding/session', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phase, messages }),
+      })
+        .then(() => logger.debug('[FIX] session saved to DB', { messageCount: messages.length, phase }))
+        .catch(() => undefined)
+    }, 1000)
+    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, phase, sessionLoaded])
 
   // Detect [ONBOARDING_COMPLETE] marker → redirect
   useEffect(() => {

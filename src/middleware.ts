@@ -73,7 +73,10 @@ export async function middleware(request: NextRequest) {
       .eq('id', user.id)
       .maybeSingle()
 
-    if (profile && !profile.onboarding_completed) {
+    if (!profile) {
+      logger.warn('[FIX] no profile row — redirecting to onboarding', { userId })
+    }
+    if (!profile || !profile.onboarding_completed) {
       logger.info('redirect: onboarding incomplete', { from: pathname, to: '/onboarding', userId })
       const redirectUrl = request.nextUrl.clone()
       redirectUrl.pathname = '/onboarding'
