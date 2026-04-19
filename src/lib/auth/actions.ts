@@ -76,26 +76,43 @@ export async function registerAction(formData: FormData): Promise<ActionResult> 
 
   try {
     const supabase = await createClient()
-    logger.info('attempting sign up', { email: parsed.data.email })
+    // Supabase dashboard requirements:
+    //   Auth > Email > "Confirm email" must be ON
+    //   Auth > URL Configuration > Redirect URLs must include <APP_URL>/api/auth/callback
+    //   Free tier: 4 emails/hour limit — use custom SMTP in production
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const emailRedirectTo = `${appUrl}/api/auth/callback`
+
+    logger.info('[FIX] attempting sign up', { email: parsed.data.email, emailRedirectTo })
 
     const { data, error } = await supabase.auth.signUp({
       email: parsed.data.email,
       password: parsed.data.password,
-      options: {
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/api/auth/callback`,
-      },
+      options: { emailRedirectTo },
     })
 
     const duration = Date.now() - start
-    logger.info('sign up result', {
-      success: !error,
-      userId: data.user?.id,
-      durationMs: duration,
-    })
 
     if (error) {
+      logger.warn('[FIX] sign up error', { email: parsed.data.email, error: error.message, durationMs: duration })
       return { success: false, error: error.message }
     }
+
+    if (!data.user) {
+      // Supabase returns no error but null user when rate-limited or email sending fails silently
+      logger.warn('[FIX] sign up returned no user — possible rate limit or invalid redirect URL', {
+        email: parsed.data.email,
+        emailRedirectTo,
+        durationMs: duration,
+      })
+      return { success: false, error: 'Registration failed. Please try again later.' }
+    }
+
+    logger.info('[FIX] sign up success — confirmation email sent', {
+      userId: data.user.id,
+      emailRedirectTo,
+      durationMs: duration,
+    })
 
     return { success: true }
   } catch (err) {
