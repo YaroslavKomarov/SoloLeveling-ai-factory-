@@ -66,6 +66,7 @@ export async function runStrategicTaskAgent(params: {
       system,
       messages,
       // No tools — all interaction via plain text + sentinel markers
+      maxOutputTokens: 2048,
       stopWhen: ({ steps }) => steps.length >= 1,
       onFinish: ({ usage }) => {
         const durationMs = Date.now() - startTime

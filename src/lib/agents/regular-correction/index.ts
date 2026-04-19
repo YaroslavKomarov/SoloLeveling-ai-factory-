@@ -36,6 +36,7 @@ export async function runCorrectionAgent(params: {
       model: getSmartModel(),
       system,
       messages,
+      maxOutputTokens: 2048,
       stopWhen: ({ steps }) => steps.length >= 1,
       onFinish: ({ usage }) => {
         const durationMs = Date.now() - startTime

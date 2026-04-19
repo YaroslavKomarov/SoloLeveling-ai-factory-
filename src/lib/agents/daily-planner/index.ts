@@ -54,6 +54,7 @@ export async function runDailyPlanner(
         planTodaysTasks,
         detectMissedTasks,
       },
+      maxOutputTokens: 4096,
       stopWhen: ({ steps }) => steps.length >= 10,
       onStepFinish: ({ toolResults }) => {
         if (!toolResults) return

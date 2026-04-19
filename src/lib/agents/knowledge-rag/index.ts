@@ -89,6 +89,7 @@ export async function runKnowledgeRag(
         getBacklinkedNotes,
         listAllNotes,
       },
+      maxOutputTokens: 2048,
       stopWhen: ({ steps }) => steps.length >= 6,
       onStepFinish: ({ toolResults }) => {
         if (!toolResults) return

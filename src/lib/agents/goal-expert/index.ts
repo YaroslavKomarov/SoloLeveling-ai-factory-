@@ -124,6 +124,7 @@ export async function runGoalExpert(params: {
         listGoalNotes,
         listGoalTasks,
       },
+      maxOutputTokens: 2048,
       stopWhen: ({ steps }) => steps.length >= 5,
       onStepFinish: ({ toolResults }) => {
         if (!toolResults) return

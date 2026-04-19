@@ -71,7 +71,15 @@ export async function runOnboardingAgent(params: {
       system: ONBOARDING_SYSTEM_PROMPT,
       messages: aiMessages,
       tools,
+      maxOutputTokens: 2048,
       stopWhen: ({ steps }) => steps.length >= 8,
+      onError: (error) => {
+        logger.error('[FIX] onboarding streamText error', {
+          userId,
+          error: error instanceof Error ? error.message : String(error),
+          errorName: error instanceof Error ? error.name : undefined,
+        })
+      },
       onStepFinish: ({ toolResults }) => {
         if (!toolResults) return
         for (const toolResult of toolResults) {
