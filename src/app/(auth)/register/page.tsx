@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { registerSchema, type RegisterData } from '@/lib/auth/validation'
-import { registerAction } from '@/lib/auth/actions'
+import { registerAction, resendConfirmationAction } from '@/lib/auth/actions'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent } from '@/components/ui/Card'
@@ -14,9 +15,18 @@ import { createLogger } from '@/lib/logger'
 const logger = createLogger('register/page')
 
 export default function RegisterPage() {
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [serverError, setServerError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null)
+  const [resendCooldown, setResendCooldown] = useState(0)
+
+  useEffect(() => {
+    if (!resendCooldown) return
+    const id = setInterval(() => setResendCooldown(c => c - 1), 1000)
+    return () => clearInterval(id)
+  }, [resendCooldown])
 
   const {
     register,
@@ -30,6 +40,7 @@ export default function RegisterPage() {
     logger.debug('form submitted', { email: data.email })
     setServerError(null)
     setSuccessMessage(null)
+    setRegisteredEmail(data.email)
 
     const formData = new FormData()
     formData.set('email', data.email)
@@ -39,9 +50,27 @@ export default function RegisterPage() {
     startTransition(async () => {
       const result = await registerAction(formData)
       if (result.success) {
-        setSuccessMessage('Check your email to confirm your account.')
+        if (result.confirmed) {
+          logger.info('[FIX] email confirmation disabled — redirecting to dashboard')
+          router.push('/app/dashboard')
+        } else {
+          setSuccessMessage('Check your email to confirm your account.')
+        }
       } else {
         setServerError(result.error ?? 'Registration failed')
+      }
+    })
+  }
+
+  const handleResend = () => {
+    if (!registeredEmail || resendCooldown > 0) return
+    startTransition(async () => {
+      const result = await resendConfirmationAction(registeredEmail)
+      if (result.success) {
+        setResendCooldown(60)
+        logger.info('[FIX] resend success', { email: registeredEmail })
+      } else {
+        setServerError(result.error ?? 'Failed to resend email')
       }
     })
   }
@@ -92,6 +121,22 @@ export default function RegisterPage() {
               >
                 {successMessage}
               </p>
+              {serverError && (
+                <p style={{ color: '#ef4444', fontSize: '0.875rem', fontFamily: 'Cormorant, serif', marginTop: '0.5rem' }}>
+                  {serverError}
+                </p>
+              )}
+              <Button
+                type="button"
+                variant="default"
+                size="default"
+                isLoading={isPending}
+                disabled={resendCooldown > 0 || isPending}
+                onClick={handleResend}
+                style={{ width: '100%', marginTop: '1rem' }}
+              >
+                {resendCooldown > 0 ? `Resend (${resendCooldown}s)` : 'Resend email'}
+              </Button>
               <Link
                 href="/login"
                 style={{

@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { loginSchema, type LoginData } from '@/lib/auth/validation'
-import { loginAction } from '@/lib/auth/actions'
+import { loginAction, resendConfirmationAction } from '@/lib/auth/actions'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -41,6 +41,13 @@ export default function LoginPage() {
   const [isPending, startTransition] = useTransition()
   const [serverError, setServerError] = useState<string | null>(null)
   const [isGoogleLoading, setIsGoogleLoading] = useState(false)
+  const [resendCooldown, setResendCooldown] = useState(0)
+
+  useEffect(() => {
+    if (!resendCooldown) return
+    const id = setInterval(() => setResendCooldown(c => c - 1), 1000)
+    return () => clearInterval(id)
+  }, [resendCooldown])
 
   const handleGoogleSignIn = async () => {
     logger.info('[FIX] Google OAuth: initiating client-side sign in')
@@ -71,6 +78,7 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
+    getValues,
     formState: { errors },
   } = useForm<LoginData>({
     resolver: zodResolver(loginSchema),
@@ -183,16 +191,42 @@ export default function LoginPage() {
               </div>
 
               {serverError && (
-                <p
-                  style={{
-                    color: '#ef4444',
-                    fontSize: '0.875rem',
-                    fontFamily: 'Cormorant, serif',
-                    textAlign: 'center',
-                  }}
-                >
-                  {serverError}
-                </p>
+                <div style={{ textAlign: 'center' }}>
+                  <p
+                    style={{
+                      color: '#ef4444',
+                      fontSize: '0.875rem',
+                      fontFamily: 'Cormorant, serif',
+                    }}
+                  >
+                    {serverError === 'Email not confirmed'
+                      ? 'Your email is not confirmed. Check your inbox or resend the confirmation email.'
+                      : serverError}
+                  </p>
+                  {serverError === 'Email not confirmed' && (
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="default"
+                      isLoading={isPending}
+                      disabled={resendCooldown > 0 || isPending}
+                      onClick={() => {
+                        startTransition(async () => {
+                          const result = await resendConfirmationAction(getValues('email'))
+                          if (result.success) {
+                            setResendCooldown(60)
+                            logger.info('[FIX] login page resend success', { email: getValues('email') })
+                          } else {
+                            setServerError(result.error ?? 'Failed to resend email')
+                          }
+                        })
+                      }}
+                      style={{ width: '100%', marginTop: '0.5rem' }}
+                    >
+                      {resendCooldown > 0 ? `Resend (${resendCooldown}s)` : 'Resend confirmation email'}
+                    </Button>
+                  )}
+                </div>
               )}
 
               <Button

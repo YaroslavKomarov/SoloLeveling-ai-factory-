@@ -41,6 +41,9 @@ function SchedulerBotBlock({
   onConnected: (periods: ActivityPeriodRow[]) => void
 }) {
   const [token, setToken] = useState<string | null>(null)
+  const [tokenLoading, setTokenLoading] = useState(true)
+  const [tokenError, setTokenError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
   const [connected, setConnected] = useState(false)
   const [periodCount, setPeriodCount] = useState(0)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -50,15 +53,37 @@ function SchedulerBotBlock({
     async function fetchToken() {
       try {
         const res = await fetch('/api/schedulerbot/token')
-        if (!res.ok) return
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({})) as { error?: string }
+          const msg = body.error ?? `HTTP ${res.status}`
+          logger.warn('schedulerbot token fetch failed', { status: res.status, error: msg })
+          setTokenError(msg)
+          return
+        }
         const data = await res.json() as { token?: string }
-        if (data.token) setToken(data.token)
+        if (data.token) {
+          setToken(data.token)
+        } else {
+          setTokenError('Токен не получен от сервера')
+        }
       } catch (err) {
-        logger.warn('failed to fetch schedulerbot token', { error: err instanceof Error ? err.message : String(err) })
+        const msg = err instanceof Error ? err.message : String(err)
+        logger.warn('failed to fetch schedulerbot token', { error: msg })
+        setTokenError(msg)
+      } finally {
+        setTokenLoading(false)
       }
     }
     fetchToken()
   }, [])
+
+  const handleCopy = useCallback(() => {
+    if (!token) return
+    navigator.clipboard.writeText(token).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }).catch(() => undefined)
+  }, [token])
 
   // Poll status until connected
   useEffect(() => {
@@ -110,17 +135,51 @@ function SchedulerBotBlock({
           <div style={{ color: 'rgba(255,255,255,0.5)', marginBottom: '8px', fontSize: '12px' }}>
             Ваш токен подключения:
           </div>
-          <div
-            style={{
-              color: 'rgba(168,85,247,0.9)',
-              letterSpacing: '0.05em',
-              fontSize: '15px',
-              marginBottom: '10px',
-              userSelect: 'all',
-            }}
-          >
-            {token ?? '...'}
-          </div>
+
+          {tokenLoading && (
+            <div style={{ color: 'rgba(255,255,255,0.3)', marginBottom: '10px' }}>загрузка...</div>
+          )}
+
+          {tokenError && !tokenLoading && (
+            <div style={{ color: 'rgba(248,113,113,0.9)', marginBottom: '10px', fontSize: '12px' }}>
+              Ошибка: {tokenError}
+            </div>
+          )}
+
+          {token && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+              <div
+                style={{
+                  color: 'rgba(168,85,247,0.9)',
+                  letterSpacing: '0.05em',
+                  fontSize: '13px',
+                  userSelect: 'all',
+                  wordBreak: 'break-all',
+                  flex: 1,
+                }}
+              >
+                {token}
+              </div>
+              <button
+                onClick={handleCopy}
+                style={{
+                  background: 'rgba(168,85,247,0.15)',
+                  border: '1px solid rgba(168,85,247,0.3)',
+                  borderRadius: '4px',
+                  color: copied ? 'rgba(134,239,172,0.9)' : 'rgba(168,85,247,0.9)',
+                  cursor: 'pointer',
+                  fontSize: '11px',
+                  padding: '4px 8px',
+                  flexShrink: 0,
+                  fontFamily: 'Cinzel, serif',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                {copied ? 'Скопировано' : 'Копировать'}
+              </button>
+            </div>
+          )}
+
           <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
             <Loader2 size={11} style={{ animation: 'spin 1.5s linear infinite' }} />
             <span>Ожидание подключения...</span>

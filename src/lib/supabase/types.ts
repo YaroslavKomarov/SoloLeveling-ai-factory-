@@ -502,6 +502,7 @@ export interface ActivityPeriodRow {
   days_of_week: number[]  // 0=Mon .. 6=Sun
   start_time: string      // time as string e.g. "09:00:00"
   end_time: string
+  period_slug: string | null  // snake_case identifier used by ShedulerBot POST /api/tasks
   created_at: string
 }
 

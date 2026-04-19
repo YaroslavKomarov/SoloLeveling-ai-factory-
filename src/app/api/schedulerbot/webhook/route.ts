@@ -3,8 +3,11 @@
  *
  * Receives activity periods from SchedulerBot after the user connects it.
  * Auth: verifies `token` in request body against users.schedulerbot_token.
- * Body: { token: string, periods: Array<{ name, days_of_week, start_time, end_time }> }
+ * Body: { token: string, periods: Array<{ name, slug, days_of_week, start_time, end_time }> }
  * Returns: { success: true, count: number }
+ *
+ * days_of_week normalization: ShedulerBot LLM uses ISO 1=Mon..7=Sun;
+ * SoloLeveling stores 0=Mon..6=Sun. Webhook normalizes on ingest: d === 7 ? 6 : d - 1
  */
 import { NextResponse, type NextRequest } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -18,6 +21,7 @@ const logger = createLogger('api/schedulerbot/webhook')
 
 interface PeriodInput {
   name: string
+  slug?: string
   days_of_week: number[]
   start_time: string
   end_time: string
@@ -72,12 +76,15 @@ export async function POST(request: NextRequest) {
     await deleteActivityPeriodsByUser(supabase, userId)
 
     for (const period of body.periods) {
+      // Normalize days_of_week: ShedulerBot LLM sends ISO 1=Mon..7=Sun; we store 0=Mon..6=Sun
+      const normalizedDays = period.days_of_week.map(d => d === 7 ? 6 : d - 1)
       await createActivityPeriod(supabase, {
         user_id: userId,
         name: period.name,
-        days_of_week: period.days_of_week,
+        days_of_week: normalizedDays,
         start_time: period.start_time,
         end_time: period.end_time,
+        period_slug: period.slug ?? null,
       })
     }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useCallback } from 'react'
+import { useState, useTransition, useCallback, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { togglePushNotifications, changeEmail } from '@/lib/settings/actions'
 import { createLogger } from '@/lib/logger'
@@ -179,6 +179,18 @@ export function SettingsClient({ user, spheres: initialSpheres, periods }: Setti
   const [emailInput, setEmailInput] = useState('')
   const [isEmailPending, startEmailTransition] = useTransition()
   const [emailMsg, setEmailMsg] = useState<string | null>(null)
+
+  const [sbToken, setSbToken] = useState<string | null>(null)
+  const [sbTokenCopied, setSbTokenCopied] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/schedulerbot/token')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d: { token?: string } | null) => {
+        if (d?.token) setSbToken(d.token)
+      })
+      .catch(() => {})
+  }, [])
 
   // Derived: which period_ids are occupied by OTHER spheres (for each sphere's select)
   const getUsedPeriodIds = useCallback(
@@ -427,6 +439,66 @@ export function SettingsClient({ user, spheres: initialSpheres, periods }: Setti
               {pushMsg}
             </p>
           )}
+        </div>
+
+        {/* SchedulerBot */}
+        <div style={section}>
+          <p style={sectionTitle}>SchedulerBot</p>
+          <p
+            style={{
+              fontFamily: 'Cormorant, serif',
+              fontSize: '0.875rem',
+              color: 'rgba(255,255,255,0.5)',
+              marginBottom: '0.75rem',
+            }}
+          >
+            Use this token in the SchedulerBot Telegram bot to sync your activity periods.
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <span
+              style={{
+                flex: 1,
+                fontFamily: 'Orbitron, monospace',
+                fontSize: '0.6875rem',
+                letterSpacing: '0.04em',
+                color: sbToken ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.2)',
+                padding: '0.5rem 0.75rem',
+                backgroundColor: 'rgba(15,20,25,0.8)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {sbToken ?? 'Loading...'}
+            </span>
+            <button
+              onClick={() => {
+                if (!sbToken) return
+                navigator.clipboard.writeText(sbToken).then(() => {
+                  setSbTokenCopied(true)
+                  setTimeout(() => setSbTokenCopied(false), 2000)
+                }).catch(() => {})
+              }}
+              disabled={!sbToken}
+              style={{
+                padding: '0.375rem 0.875rem',
+                backgroundColor: 'transparent',
+                border: '1px solid rgba(255,255,255,0.15)',
+                color: sbTokenCopied ? '#00d4ff' : 'rgba(255,255,255,0.5)',
+                fontFamily: 'Cinzel, serif',
+                fontSize: '0.5625rem',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                cursor: sbToken ? 'pointer' : 'not-allowed',
+                opacity: sbToken ? 1 : 0.4,
+                flexShrink: 0,
+                transition: 'color 0.2s ease',
+              }}
+            >
+              {sbTokenCopied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
         </div>
 
         {/* Account */}

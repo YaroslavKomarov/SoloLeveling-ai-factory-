@@ -10,6 +10,7 @@ const logger = createLogger('auth/actions')
 export interface ActionResult {
   success: boolean
   error?: string
+  confirmed?: boolean
 }
 
 export async function loginAction(formData: FormData): Promise<ActionResult> {
@@ -108,16 +109,45 @@ export async function registerAction(formData: FormData): Promise<ActionResult> 
       return { success: false, error: 'Registration failed. Please try again later.' }
     }
 
-    logger.info('[FIX] sign up success — confirmation email sent', {
+    const confirmed = data.session !== null
+    logger.info('[FIX] sign up success', {
       userId: data.user.id,
+      confirmed,
       emailRedirectTo,
       durationMs: duration,
     })
 
-    return { success: true }
+    return { success: true, confirmed }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     logger.error('registerAction ERROR', { email: raw.email, error: message })
+    return { success: false, error: 'An unexpected error occurred' }
+  }
+}
+
+export async function resendConfirmationAction(email: string): Promise<ActionResult> {
+  logger.info('[FIX] resendConfirmationAction START', { email })
+  try {
+    const supabase = await createClient()
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const emailRedirectTo = `${appUrl}/api/auth/callback`
+
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo },
+    })
+
+    if (error) {
+      logger.warn('[FIX] resend error', { email, error: error.message })
+      return { success: false, error: error.message }
+    }
+
+    logger.info('[FIX] resend success', { email })
+    return { success: true }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    logger.error('[FIX] resendConfirmationAction ERROR', { email, error: message })
     return { success: false, error: 'An unexpected error occurred' }
   }
 }
