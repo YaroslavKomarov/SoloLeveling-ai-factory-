@@ -66,7 +66,7 @@ export function createRetrospectiveAnalyzerTools(ctx: ToolContext) {
         logger.info('saveAdjustments tool success', { retroId, adjustmentCount: saved.length })
         return `Saved ${saved.length} adjustment(s) to retrospective ${retroId}.`
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error)
+        const msg = error instanceof Error ? error.message : JSON.stringify(error)
         logger.error('saveAdjustments tool failed', { retroId, error: msg })
         // Return error string — do not throw (agent should continue)
         return `Error saving adjustments: ${msg}`
@@ -108,7 +108,7 @@ export function createRetrospectiveAnalyzerTools(ctx: ToolContext) {
           })
           results.push(`Saved pattern: ${pattern.key}`)
         } catch (error) {
-          const msg = error instanceof Error ? error.message : String(error)
+          const msg = error instanceof Error ? error.message : JSON.stringify(error)
           logger.error('detectAndSavePatterns: failed to save pattern', { userId, key: pattern.key, error: msg })
           results.push(`Error saving pattern ${pattern.key}: ${msg}`)
         }
@@ -161,7 +161,7 @@ export function createRetrospectiveAnalyzerTools(ctx: ToolContext) {
 
         return `Updated @me/patterns.md (${content.length} chars).`
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error)
+        const msg = error instanceof Error ? error.message : JSON.stringify(error)
         logger.error('updatePatternsNote tool failed', { userId, error: msg })
         return `Error updating patterns note: ${msg}`
       }

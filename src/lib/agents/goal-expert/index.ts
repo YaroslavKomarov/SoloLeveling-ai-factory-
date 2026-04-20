@@ -156,7 +156,7 @@ export async function runGoalExpert(params: {
       userId,
       goalId,
       sessionId,
-      error: error instanceof Error ? error.message : String(error),
+      error: error instanceof Error ? error.message : JSON.stringify(error),
       durationMs,
     })
     throw error

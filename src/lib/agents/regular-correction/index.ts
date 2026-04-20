@@ -48,7 +48,7 @@ export async function runCorrectionAgent(params: {
   } catch (error) {
     const durationMs = Date.now() - startTime
     logger.error('[correction-agent] failed', {
-      error: error instanceof Error ? error.message : String(error),
+      error: error instanceof Error ? error.message : JSON.stringify(error),
       durationMs,
     })
     throw error

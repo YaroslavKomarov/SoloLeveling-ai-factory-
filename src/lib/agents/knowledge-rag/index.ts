@@ -116,7 +116,7 @@ export async function runKnowledgeRag(
     const durationMs = Date.now() - startTime
     logger.error('Knowledge RAG agent failed', {
       userId,
-      error: error instanceof Error ? error.message : String(error),
+      error: error instanceof Error ? error.message : JSON.stringify(error),
       durationMs,
     })
     throw error

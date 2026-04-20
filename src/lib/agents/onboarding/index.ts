@@ -76,8 +76,9 @@ export async function runOnboardingAgent(params: {
       onError: (error) => {
         logger.error('[FIX] onboarding streamText error', {
           userId,
-          error: error instanceof Error ? error.message : String(error),
+          error: error instanceof Error ? error.message : JSON.stringify(error),
           errorName: error instanceof Error ? error.name : undefined,
+          errorRaw: error,
         })
       },
       onStepFinish: ({ toolResults }) => {

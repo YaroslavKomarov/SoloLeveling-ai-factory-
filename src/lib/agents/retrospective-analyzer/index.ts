@@ -127,7 +127,7 @@ export async function runRetrospectiveAnalyzer(input: AnalyzerInput): Promise<An
     logger.error('runRetrospectiveAnalyzer failed', {
       userId,
       retroId,
-      error: error instanceof Error ? error.message : String(error),
+      error: error instanceof Error ? error.message : JSON.stringify(error),
       durationMs,
     })
     throw error

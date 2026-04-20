@@ -80,7 +80,7 @@ export async function runStrategicTaskAgent(params: {
     logger.error('[strategic-task] agent failed', {
       userId,
       taskId,
-      error: error instanceof Error ? error.message : String(error),
+      error: error instanceof Error ? error.message : JSON.stringify(error),
       durationMs,
     })
     throw error

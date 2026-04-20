@@ -116,7 +116,7 @@ export async function runDailyPlanner(
     logger.error('Daily planner failed', {
       userId,
       targetDate,
-      error: error instanceof Error ? error.message : String(error),
+      error: error instanceof Error ? error.message : JSON.stringify(error),
       durationMs,
     })
     throw error
