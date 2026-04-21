@@ -404,11 +404,13 @@ export function OnboardingChat() {
     setPhase('spheres')
     logger.debug('schedulerbot connected, advancing to spheres phase', { periodCount: periods.length })
 
-    // Auto-send a message to advance the agent
+    // Auto-send a message to advance the agent — include period IDs so the agent
+    // can pass the correct UUID to create_sphere (without them the LLM hallucinates IDs)
     const periodsSummary = periods
-      .map((p) => `- ${p.name} (дни: ${p.days_of_week.join(',')}, ${p.start_time}–${p.end_time})`)
+      .map((p) => `- id=${p.id} | ${p.name} (дни: ${p.days_of_week.join(',')}, ${p.start_time}–${p.end_time})`)
       .join('\n')
 
+    logger.debug('[FIX] sending periods to agent with IDs', { periodCount: periods.length, ids: periods.map((p) => p.id) })
     sendMessage(`SchedulerBot подключён! Получено ${periods.length} периодов активности:\n${periodsSummary}`)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setPeriods, setPhase])
