@@ -18,6 +18,7 @@ import {
   buildCompleteOnboardingTool,
 } from './tools'
 import { createClient } from '@/lib/supabase/server'
+import { getActivityPeriodsByUser } from '@/lib/supabase/activity-periods'
 
 const logger = createLogger('onboarding-agent')
 
@@ -42,6 +43,30 @@ export async function runOnboardingAgent(params: {
   logger.debug('onboarding agent called', { userId, phase: sessionPhase })
 
   const supabase = await createClient()
+
+  // When in spheres phase, inject current activity_periods from DB into system prompt.
+  // This prevents stale IDs from chat history (e.g. webhook fired twice, recreated periods).
+  let systemPrompt = ONBOARDING_SYSTEM_PROMPT
+  if (sessionPhase === 'spheres') {
+    try {
+      const periods = await getActivityPeriodsByUser(supabase, userId)
+      if (periods.length > 0) {
+        const periodsList = periods
+          .map((p) => `- id=${p.id} | ${p.name} (дни: ${p.days_of_week.join(',')}, ${p.start_time}–${p.end_time})`)
+          .join('\n')
+        systemPrompt = `${ONBOARDING_SYSTEM_PROMPT}
+
+## CURRENT ACTIVITY PERIODS (authoritative — use these IDs for create_sphere)
+
+${periodsList}
+
+Always use the id values above as period_id when calling create_sphere. Do NOT use IDs from chat history.`
+        logger.debug('[FIX] injected activity periods into system prompt', { userId, count: periods.length })
+      }
+    } catch (err) {
+      logger.warn('[FIX] failed to fetch activity periods for prompt injection', { userId, error: err instanceof Error ? err.message : String(err) })
+    }
+  }
 
   const tools = {
     save_profile_section: buildSaveProfileSectionTool(supabase, userId),
@@ -77,7 +102,7 @@ export async function runOnboardingAgent(params: {
   try {
     const result = streamText({
       model: getSmartModel(),
-      system: ONBOARDING_SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: aiMessages,
       tools,
       maxOutputTokens: 2048,
