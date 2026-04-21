@@ -50,11 +50,20 @@ export async function runOnboardingAgent(params: {
     complete_onboarding: buildCompleteOnboardingTool(supabase, userId),
   }
 
+  const ERROR_FALLBACKS = [
+    'Нет ответа от агента. Попробуйте ещё раз.',
+    'Не удалось получить ответ. Попробуйте ещё раз.',
+    'Ошибка сервера',
+    'Нет ответа от сервера',
+  ]
+
   const aiMessages = [
-    ...messages.map((msg) => ({
-      role: msg.role as 'user' | 'assistant',
-      content: msg.content,
-    })),
+    ...messages
+      .filter((msg) => !(msg.role === 'assistant' && ERROR_FALLBACKS.includes(msg.content.trim())))
+      .map((msg) => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      })),
     { role: 'user' as const, content: query },
   ]
 
