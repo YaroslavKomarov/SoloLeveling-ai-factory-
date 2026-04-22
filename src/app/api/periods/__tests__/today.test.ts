@@ -46,6 +46,8 @@ function makePeriod(id = 'period-1'): ActivityPeriodRow {
     days_of_week: [0, 1, 2, 3, 4],
     start_time: '09:00:00',
     end_time: '10:30:00',
+    period_slug: null,
+    queue_slug: null,
     created_at: '2026-01-01T00:00:00Z',
   }
 }
@@ -109,6 +111,7 @@ function makeTask(id = 't1'): TaskRow {
     description: null,
     duration_minutes: 12,
     calendar_event_id: null,
+    template_task_id: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   }

@@ -22,6 +22,7 @@ const logger = createLogger('api/schedulerbot/webhook')
 interface PeriodInput {
   name: string
   slug?: string
+  queue_slug?: string  // activity-group key; multiple slots can share one queue_slug
   days_of_week: number[]
   start_time: string
   end_time: string
@@ -78,6 +79,13 @@ export async function POST(request: NextRequest) {
     for (const period of body.periods) {
       // Normalize days_of_week: ShedulerBot LLM sends ISO 1=Mon..7=Sun; we store 0=Mon..6=Sun
       const normalizedDays = period.days_of_week.map(d => d === 7 ? 6 : d - 1)
+      // queue_slug: explicit field from new ShedulerBot format > slug fallback > null
+      const resolvedQueueSlug = period.queue_slug ?? period.slug ?? null
+      logger.debug('webhook: period queue_slug resolved', {
+        name: period.name,
+        slug: period.slug,
+        queue_slug: resolvedQueueSlug,
+      })
       await createActivityPeriod(supabase, {
         user_id: userId,
         name: period.name,
@@ -85,6 +93,7 @@ export async function POST(request: NextRequest) {
         start_time: period.start_time,
         end_time: period.end_time,
         period_slug: period.slug ?? null,
+        queue_slug: resolvedQueueSlug,
       })
     }
 

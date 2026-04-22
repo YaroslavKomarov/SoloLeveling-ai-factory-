@@ -105,16 +105,18 @@ export interface SphereRow {
   description: string | null
   icon: string
   order_index: number
-  period_id: string | null  // linked activity period (set during onboarding)
+  period_id: string | null   // legacy FK to one representative activity_period
+  queue_slug: string | null  // activity-group key — primary sphere-to-period-group mapping
   created_at: string
   updated_at: string
 }
 
-export type SphereInsert = Omit<SphereRow, 'id' | 'created_at' | 'updated_at'> & {
+export type SphereInsert = Omit<SphereRow, 'id' | 'created_at' | 'updated_at' | 'queue_slug'> & {
   description?: string | null
   icon?: string
   order_index?: number
   period_id?: string | null
+  queue_slug?: string | null
 }
 
 export type SphereUpdate = Partial<Omit<SphereRow, 'id' | 'user_id' | 'created_at'>>
@@ -506,7 +508,8 @@ export interface ActivityPeriodRow {
   days_of_week: number[]  // 0=Mon .. 6=Sun
   start_time: string      // time as string e.g. "09:00:00"
   end_time: string
-  period_slug: string | null  // snake_case identifier used by ShedulerBot POST /api/tasks
+  period_slug: string | null  // time-slot identifier, e.g. "work-morning"
+  queue_slug: string | null   // activity-group key shared by slots in the same group, e.g. "work"
   created_at: string
 }
 

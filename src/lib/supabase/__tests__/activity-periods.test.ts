@@ -27,6 +27,7 @@ function makePeriod(overrides: Partial<ActivityPeriodRow> = {}): ActivityPeriodR
     start_time: '09:00:00',
     end_time: '12:00:00',
     period_slug: null,
+    queue_slug: null,
     created_at: '2026-04-15T00:00:00Z',
     ...overrides,
   }
@@ -52,6 +53,7 @@ describe('createActivityPeriod', () => {
       start_time: '09:00:00',
       end_time: '12:00:00',
       period_slug: null,
+      queue_slug: null,
     })
 
     expect(from).toHaveBeenCalledWith('activity_periods')
@@ -74,6 +76,7 @@ describe('createActivityPeriod', () => {
         start_time: '09:00:00',
         end_time: '10:00:00',
         period_slug: null,
+        queue_slug: null,
       })
     ).rejects.toThrow('Insert failed')
   })

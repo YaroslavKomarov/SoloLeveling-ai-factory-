@@ -51,13 +51,34 @@ export async function GET() {
     const periodResults: PeriodWithTasks[] = []
 
     for (const period of periods) {
-      // Find sphere linked to this period
-      const { data: sphereData, error: sphereError } = (await supabase
-        .from('spheres')
-        .select('id, name, user_id')
-        .eq('user_id', user.id)
-        .eq('period_id', period.id)
-        .maybeSingle()) as { data: { id: string; name: string; user_id: string } | null; error: { message: string } | null }
+      // Find sphere linked to this period.
+      // queue_slug = new model: multiple time slots with the same queue_slug map to one sphere.
+      // period_id  = legacy fallback for spheres created before migration 025.
+      // Both slots of a shared group (e.g. work-morning + work-evening) will resolve the same
+      // sphere and display separate time blocks backed by the same goal/task queue — intentional.
+      const lookupByQueueSlug = !!period.queue_slug
+      const { data: sphereData, error: sphereError } = await (
+        lookupByQueueSlug
+          ? supabase
+              .from('spheres')
+              .select('id, name, user_id')
+              .eq('user_id', user.id)
+              .eq('queue_slug', period.queue_slug!)
+              .maybeSingle()
+          : supabase
+              .from('spheres')
+              .select('id, name, user_id')
+              .eq('user_id', user.id)
+              .eq('period_id', period.id)
+              .maybeSingle()
+      ) as { data: { id: string; name: string; user_id: string } | null; error: { message: string } | null }
+
+      logger.debug('[GET /api/periods/today] sphere lookup', {
+        periodId: period.id,
+        queue_slug: period.queue_slug,
+        lookupMode: lookupByQueueSlug ? 'queue_slug' : 'period_id',
+        found: !!sphereData,
+      })
 
       if (sphereError) {
         logger.error('[GET /api/periods/today] sphere lookup failed', {

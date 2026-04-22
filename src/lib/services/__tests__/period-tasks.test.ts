@@ -18,6 +18,8 @@ function makePeriod(start_time: string, end_time: string): ActivityPeriodRow {
     days_of_week: [0, 1, 2, 3, 4],
     start_time,
     end_time,
+    period_slug: null,
+    queue_slug: null,
     created_at: '2026-01-01T00:00:00Z',
   }
 }

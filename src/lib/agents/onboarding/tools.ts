@@ -95,23 +95,53 @@ export function buildSaveProfileSectionTool(supabase: DB, userId: string) {
 export function buildCreateSphereTool(supabase: DB, userId: string) {
   return tool({
     description:
-      'Create a new sphere for the user, linked to one of their SchedulerBot activity periods. ' +
-      'Only call this after the user has confirmed the sphere name.',
+      'Create a new sphere for the user, linked to a SchedulerBot activity group. ' +
+      'Only call this after the user has confirmed the sphere name. ' +
+      'Pass queue_slug (the activity-group key), NOT a period_id.',
     parameters: z.object({
       name: z.string().min(1).describe('The sphere name confirmed by the user'),
-      period_id: z.string().uuid().describe('The activity_period id this sphere is linked to'),
+      queue_slug: z.string().min(1).describe(
+        'The queue_slug of the activity group for this sphere. ' +
+        'Use the queue_slug value shown in the activity period groups list.'
+      ),
     }),
-    execute: async ({ name, period_id }) => {
-      logger.debug('create_sphere called', { userId, name, period_id })
+    execute: async ({ name, queue_slug }) => {
+      logger.debug('create_sphere: resolving periods', { userId, queue_slug })
 
       try {
+        // Resolve representative period_id — use the first period in the group (ordered by created_at)
+        const { data: periods, error: periodsError } = await supabase
+          .from('activity_periods')
+          .select()
+          .eq('user_id', userId)
+          .eq('queue_slug', queue_slug)
+          .order('created_at')
+
+        if (periodsError) {
+          logger.warn('create_sphere: period lookup failed', { userId, queue_slug, error: periodsError.message })
+          return { error: `Period lookup failed: ${periodsError.message}` }
+        }
+
+        if (!periods || periods.length === 0) {
+          logger.warn('create_sphere: no periods found for queue_slug', { userId, queue_slug })
+          return { error: `No activity period found for queue_slug: ${queue_slug}` }
+        }
+
+        const representative_period_id = periods[0].id
+        logger.debug('create_sphere: matched periods', {
+          count: periods.length,
+          representative: representative_period_id,
+          queue_slug,
+        })
+
         const sphere = await createSphere(supabase, {
           user_id: userId,
           name,
-          period_id,
+          period_id: representative_period_id,
+          queue_slug,
         })
 
-        logger.debug('sphere created via tool', { userId, sphereId: sphere.id, name })
+        logger.debug('sphere created via tool', { userId, sphereId: sphere.id, name, queue_slug })
         return { sphere_id: sphere.id }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)

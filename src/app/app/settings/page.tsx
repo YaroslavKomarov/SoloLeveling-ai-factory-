@@ -21,7 +21,7 @@ export default async function SettingsPage() {
       .then((r: any) => r.data),
     db
       .from('spheres')
-      .select('id, name, period_id')
+      .select('id, name, period_id, queue_slug')
       .eq('user_id', user.id)
       .order('order_index')
       .then((r: any) => r.data ?? []),

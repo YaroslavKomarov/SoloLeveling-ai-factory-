@@ -23,6 +23,8 @@ function makeSphere(id: string): SphereRow {
     description: null,
     icon: 'target',
     order_index: 0,
+    period_id: null,
+    queue_slug: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   }

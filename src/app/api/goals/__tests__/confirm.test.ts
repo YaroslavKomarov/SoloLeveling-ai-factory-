@@ -145,6 +145,7 @@ describe('POST /api/goals/confirm', () => {
       icon: '📚',
       order_index: 0,
       period_id: null,
+      queue_slug: null,
       created_at: TODAY,
       updated_at: TODAY,
     })

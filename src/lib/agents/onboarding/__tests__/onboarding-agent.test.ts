@@ -87,15 +87,25 @@ describe('create_sphere tool', () => {
     vi.clearAllMocks()
   })
 
-  it('calls createSphere with correct period_id and returns sphere_id', async () => {
+  function makeSupabaseWithPeriods(periods: Array<{ id: string; queue_slug: string }>): DB {
+    // The tool queries activity_periods by queue_slug to get the representative period_id.
+    const order = vi.fn().mockResolvedValue({ data: periods, error: null })
+    const eq2 = vi.fn().mockReturnValue({ order })
+    const eq1 = vi.fn().mockReturnValue({ eq: eq2 })
+    const select = vi.fn().mockReturnValue({ eq: eq1 })
+    const from = vi.fn().mockReturnValue({ select })
+    return { from } as unknown as DB
+  }
+
+  it('resolves period_id from queue_slug and calls createSphere', async () => {
     const mockSphere = { id: 'sphere-1', name: 'Work', user_id: USER_ID }
     vi.mocked(createSphere).mockResolvedValue(mockSphere as never)
 
-    const supabase = {} as unknown as DB
+    const supabase = makeSupabaseWithPeriods([{ id: 'period-1', queue_slug: 'work' }])
     const tool = buildCreateSphereTool(supabase, USER_ID)
 
     const result = await tool.execute(
-      { name: 'Work', period_id: 'period-1' },
+      { name: 'Work', queue_slug: 'work' },
       { messages: [], toolCallId: 'tc-3', abortSignal: new AbortController().signal }
     )
 
@@ -103,19 +113,32 @@ describe('create_sphere tool', () => {
       user_id: USER_ID,
       name: 'Work',
       period_id: 'period-1',
+      queue_slug: 'work',
     })
     expect(result).toEqual({ sphere_id: 'sphere-1' })
+  })
+
+  it('returns error when no periods found for queue_slug', async () => {
+    const supabase = makeSupabaseWithPeriods([])
+    const tool = buildCreateSphereTool(supabase, USER_ID)
+
+    const result = await tool.execute(
+      { name: 'Work', queue_slug: 'nonexistent' },
+      { messages: [], toolCallId: 'tc-4', abortSignal: new AbortController().signal }
+    )
+
+    expect(result).toEqual({ error: 'No activity period found for queue_slug: nonexistent' })
   })
 
   it('returns error when createSphere throws', async () => {
     vi.mocked(createSphere).mockRejectedValue(new Error('DB error'))
 
-    const supabase = {} as unknown as DB
+    const supabase = makeSupabaseWithPeriods([{ id: 'period-1', queue_slug: 'work' }])
     const tool = buildCreateSphereTool(supabase, USER_ID)
 
     const result = await tool.execute(
-      { name: 'Work', period_id: 'period-1' },
-      { messages: [], toolCallId: 'tc-4', abortSignal: new AbortController().signal }
+      { name: 'Work', queue_slug: 'work' },
+      { messages: [], toolCallId: 'tc-5', abortSignal: new AbortController().signal }
     )
 
     expect(result).toEqual({ error: 'DB error' })
@@ -141,7 +164,7 @@ describe('complete_onboarding tool', () => {
     const result = await tool.execute({}, { messages: [], toolCallId: 'tc-5', abortSignal: new AbortController().signal })
 
     expect(from).toHaveBeenCalledWith('users')
-    expect(update).toHaveBeenCalledWith({ onboarding_completed: true })
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ onboarding_completed: true }))
     expect(updateEq).toHaveBeenCalledWith('id', USER_ID)
     expect(result).toEqual({ success: true, signal: 'onboarding_complete' })
   })

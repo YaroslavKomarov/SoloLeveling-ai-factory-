@@ -11,6 +11,9 @@ export interface SchedulerbotTask {
   external_id: string
   title: string
   description?: string
+  // Must equal the sphere's queue_slug (= ShedulerBot queue identifier).
+  // Do NOT use the time-slot's period_slug — that identifies a time window, not a task queue.
+  // Source: sphere.queue_slug via getQueueSlugForSphere() in src/lib/supabase/spheres.ts
   period_slug: string
   due_date?: string  // ISO date string
 }

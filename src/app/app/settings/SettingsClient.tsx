@@ -20,32 +20,35 @@ interface SettingsClientProps {
     xp: number
     push_notifications_enabled: boolean
   }
-  spheres: Array<{ id: string; name: string; period_id: string | null }>
+  spheres: Array<{ id: string; name: string; period_id: string | null; queue_slug: string | null }>
   periods: Array<{
     id: string
     name: string
     days_of_week: number[]
     start_time: string
     end_time: string
+    queue_slug: string | null
   }>
 }
 
 // ─── Sphere row ──────────────────────────────────────────────────────────────
 
 interface SphereRowProps {
-  sphere: { id: string; name: string; period_id: string | null }
+  sphere: { id: string; name: string; period_id: string | null; queue_slug: string | null }
   periods: SettingsClientProps['periods']
-  usedPeriodIds: Set<string>
-  onSaved: (sphereId: string, periodId: string | null) => void
+  usedQueueSlugs: Set<string>
+  onSaved: (sphereId: string, periodId: string | null, queueSlug: string | null) => void
 }
 
-function SpherePeriodRow({ sphere, periods, usedPeriodIds, onSaved }: SphereRowProps) {
+function SpherePeriodRow({ sphere, periods, usedQueueSlugs, onSaved }: SphereRowProps) {
   const [selected, setSelected] = useState<string>(sphere.period_id ?? '')
   const [isSaving, setIsSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
+  // A period is available if its queue_slug is not occupied by another sphere.
+  // The current sphere's own period is always available (so the user can re-save it).
   const availablePeriods = periods.filter(
-    (p) => !usedPeriodIds.has(p.id) || p.id === sphere.period_id
+    (p) => !usedQueueSlugs.has(p.queue_slug ?? p.id) || p.id === sphere.period_id
   )
 
   const handleSave = async () => {
@@ -66,9 +69,11 @@ function SpherePeriodRow({ sphere, periods, usedPeriodIds, onSaved }: SphereRowP
         throw new Error(data.error ?? `HTTP ${res.status}`)
       }
 
-      logger.info('[SpherePeriodRow] saved', { sphereId: sphere.id, period_id: periodId })
+      const responseData = await res.json() as { sphere?: { queue_slug?: string | null } }
+      const savedQueueSlug = responseData.sphere?.queue_slug ?? null
+      logger.info('[SpherePeriodRow] saved', { sphereId: sphere.id, period_id: periodId, queue_slug: savedQueueSlug })
       setMsg('Saved')
-      onSaved(sphere.id, periodId)
+      onSaved(sphere.id, periodId, savedQueueSlug)
       setTimeout(() => setMsg(null), 2000)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -192,20 +197,21 @@ export function SettingsClient({ user, spheres: initialSpheres, periods }: Setti
       .catch(() => {})
   }, [])
 
-  // Derived: which period_ids are occupied by OTHER spheres (for each sphere's select)
-  const getUsedPeriodIds = useCallback(
+  // Derived: which queue_slugs are occupied by OTHER spheres (for each sphere's period select).
+  // Using queue_slug means all time slots in a group are blocked once any slot in that group is taken.
+  const getUsedQueueSlugs = useCallback(
     (excludeSphereId: string): Set<string> => {
       return new Set(
         spheres
-          .filter((s) => s.id !== excludeSphereId && s.period_id !== null)
-          .map((s) => s.period_id as string)
+          .filter((s) => s.id !== excludeSphereId && s.queue_slug !== null)
+          .map((s) => s.queue_slug as string)
       )
     },
     [spheres]
   )
 
-  const handleSphereSaved = useCallback((sphereId: string, periodId: string | null) => {
-    setSpheres((prev) => prev.map((s) => s.id === sphereId ? { ...s, period_id: periodId } : s))
+  const handleSphereSaved = useCallback((sphereId: string, periodId: string | null, queueSlug: string | null) => {
+    setSpheres((prev) => prev.map((s) => s.id === sphereId ? { ...s, period_id: periodId, queue_slug: queueSlug } : s))
   }, [])
 
   const handlePushToggle = () => {
@@ -386,7 +392,7 @@ export function SettingsClient({ user, spheres: initialSpheres, periods }: Setti
                   key={sphere.id}
                   sphere={sphere}
                   periods={periods}
-                  usedPeriodIds={getUsedPeriodIds(sphere.id)}
+                  usedQueueSlugs={getUsedQueueSlugs(sphere.id)}
                   onSaved={handleSphereSaved}
                 />
               ))}

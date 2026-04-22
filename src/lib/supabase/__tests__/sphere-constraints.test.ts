@@ -23,6 +23,7 @@ function makeSphere(overrides: Partial<SphereRow> = {}): SphereRow {
     icon: 'heart',
     order_index: 0,
     period_id: 'p1',
+    queue_slug: 'health',
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...overrides,
@@ -37,6 +38,7 @@ function makeInsert(overrides: Partial<SphereInsert> = {}): SphereInsert {
     icon: 'heart',
     order_index: 0,
     period_id: 'p1',
+    queue_slug: 'health',
     ...overrides,
   }
 }
@@ -104,19 +106,29 @@ describe('createSphere — name uniqueness guard', () => {
   })
 })
 
-describe('createSphere — period uniqueness guard', () => {
-  it('throws 409 when period is already mapped to another sphere', async () => {
+describe('createSphere — uniqueness guard', () => {
+  it('throws 409 when queue_slug is already mapped to another sphere', async () => {
+    // queue_slug provided → queue_slug guard runs first
     const supabase = makeSupabase({ nameConflict: null, periodConflict: makeSphere({ id: 's2' }) })
-    await expect(createSphere(supabase, makeInsert())).rejects.toMatchObject({
+    await expect(createSphere(supabase, makeInsert({ queue_slug: 'health' }))).rejects.toMatchObject({
+      message: 'Activity group already mapped to another sphere',
+      code: 409,
+    })
+  })
+
+  it('falls back to period_id guard when queue_slug is not provided', async () => {
+    // No queue_slug → legacy period_id guard runs
+    const insertWithoutQueueSlug = makeInsert({ queue_slug: undefined })
+    const supabase = makeSupabase({ nameConflict: null, periodConflict: makeSphere({ id: 's2' }) })
+    await expect(createSphere(supabase, insertWithoutQueueSlug)).rejects.toMatchObject({
       message: 'Period already mapped to another sphere',
       code: 409,
     })
   })
 
-  it('skips period check when period_id is not provided', async () => {
-    // period_id undefined → only name check, then insert
-    const insertWithoutPeriod = makeInsert({ period_id: undefined })
-    const supabase = makeSupabase({ nameConflict: null, insertResult: makeSphere({ period_id: null }) })
+  it('skips all guards when neither queue_slug nor period_id is provided', async () => {
+    const insertWithoutPeriod = makeInsert({ period_id: undefined, queue_slug: undefined })
+    const supabase = makeSupabase({ nameConflict: null, insertResult: makeSphere({ period_id: null, queue_slug: null }) })
     const result = await createSphere(supabase, insertWithoutPeriod)
     expect(result).toBeDefined()
   })

@@ -25,8 +25,20 @@ export async function createSphere(supabase: DB, insert: SphereInsert): Promise<
     throw Object.assign(new Error('Sphere name already exists'), { code: 409 })
   }
 
-  // Unique period guard
-  if (insert.period_id) {
+  // Uniqueness guard: queue_slug is the primary key (new model — one sphere per activity group).
+  // Fall back to period_id guard for legacy inserts where queue_slug is not provided.
+  if (insert.queue_slug) {
+    const { data: queueConflict } = await supabase
+      .from('spheres')
+      .select('id')
+      .eq('user_id', insert.user_id)
+      .eq('queue_slug', insert.queue_slug)
+      .maybeSingle()
+    if (queueConflict) {
+      logger.warn('[createSphere] queue_slug conflict', { userId: insert.user_id, queue_slug: insert.queue_slug })
+      throw Object.assign(new Error('Activity group already mapped to another sphere'), { code: 409 })
+    }
+  } else if (insert.period_id) {
     const { data: periodConflict } = await supabase
       .from('spheres')
       .select('id')
@@ -164,4 +176,19 @@ export async function deleteSphere(supabase: DB, id: string): Promise<void> {
   }
 
   logger.debug('sphere deleted', { id })
+}
+
+/**
+ * Returns the queue_slug for a sphere — used when dispatching tasks to ShedulerBot.
+ * The queue_slug (not period_slug) is the correct period_slug value for POST /api/tasks.
+ */
+export async function getQueueSlugForSphere(
+  supabase: DB,
+  userId: string,
+  sphereId: string
+): Promise<string | null> {
+  const sphere = await getSphereById(supabase, sphereId)
+  if (!sphere || sphere.user_id !== userId) return null
+  logger.debug('getQueueSlugForSphere', { sphereId, queue_slug: sphere.queue_slug })
+  return sphere.queue_slug ?? null
 }

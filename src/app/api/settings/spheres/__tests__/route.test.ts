@@ -36,26 +36,37 @@ function makeParams(sphereId = SPHERE_ID) {
 
 function mockSupabase({
   userId = 'user-1',
-  sphere = { id: SPHERE_ID, user_id: 'user-1', period_id: null } as { id: string; user_id: string; period_id: string | null } | null,
+  sphere = { id: SPHERE_ID, user_id: 'user-1', period_id: null, queue_slug: null } as { id: string; user_id: string; period_id: string | null; queue_slug: string | null } | null,
+  periodRow = null as { queue_slug: string | null; period_slug: string | null } | null,
   periodConflict = null as { id: string } | null,
 }: {
   userId?: string | null
-  sphere?: { id: string; user_id: string; period_id: string | null } | null
+  sphere?: { id: string; user_id: string; period_id: string | null; queue_slug: string | null } | null
+  periodRow?: { queue_slug: string | null; period_slug: string | null } | null
   periodConflict?: { id: string } | null
 } = {}) {
-  let callCount = 0
+  let sphereCallCount = 0
 
-  const from = vi.fn().mockImplementation(() => {
-    callCount++
-    if (callCount === 1) {
-      // Sphere ownership check
+  const from = vi.fn().mockImplementation((table: string) => {
+    if (table === 'activity_periods') {
+      // Period lookup to resolve queue_slug: .select().eq(id).eq(user_id).maybeSingle()
+      const maybeSingle = vi.fn().mockResolvedValue({ data: periodRow, error: null })
+      const eq2 = vi.fn().mockReturnValue({ maybeSingle })
+      const eq1 = vi.fn().mockReturnValue({ eq: eq2 })
+      const select = vi.fn().mockReturnValue({ eq: eq1 })
+      return { select }
+    }
+    // table === 'spheres'
+    sphereCallCount++
+    if (sphereCallCount === 1) {
+      // Sphere ownership check: .select().eq(id).eq(user_id).maybeSingle()
       const maybeSingle = vi.fn().mockResolvedValue({ data: sphere, error: sphere === null ? { message: 'not found' } : null })
       const eq2 = vi.fn().mockReturnValue({ maybeSingle })
       const eq1 = vi.fn().mockReturnValue({ eq: eq2 })
       const select = vi.fn().mockReturnValue({ eq: eq1 })
       return { select }
     }
-    // Period conflict check: .select().eq(user_id).eq(period_id).neq(id).maybeSingle()
+    // Conflict check: .select().eq(user_id).eq(queue_slug or period_id).neq(id).maybeSingle()
     const maybeSingle = vi.fn().mockResolvedValue({ data: periodConflict, error: null })
     const neq = vi.fn().mockReturnValue({ maybeSingle })
     const eq2 = vi.fn().mockReturnValue({ neq })
@@ -77,9 +88,9 @@ function mockSupabase({
   vi.mocked(createClient).mockResolvedValue(supabase as any)
   vi.mocked(updateSphere).mockResolvedValue({
     id: SPHERE_ID, user_id: 'user-1', name: 'Health', description: null,
-    icon: 'heart', order_index: 0, period_id: PERIOD_ID,
+    icon: 'heart', order_index: 0, period_id: PERIOD_ID, queue_slug: null,
     created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
-  })
+  } as any)
 
   return { supabase }
 }
@@ -101,9 +112,11 @@ describe('PATCH /api/settings/spheres/[sphereId]', () => {
     expect(res.status).toBe(403)
   })
 
-  it('409 when period_id already used by another sphere', async () => {
+  it('409 when period_id already used by another sphere (legacy path — no queue_slug)', async () => {
+    // periodRow has no queue_slug → legacy period_id conflict check runs
     mockSupabase({
-      sphere: { id: SPHERE_ID, user_id: 'user-1', period_id: null },
+      sphere: { id: SPHERE_ID, user_id: 'user-1', period_id: null, queue_slug: null },
+      periodRow: { queue_slug: null, period_slug: null },
       periodConflict: { id: OTHER_SPHERE_ID },
     })
     const req = makeRequest(SPHERE_ID, { period_id: PERIOD_ID })
@@ -113,22 +126,39 @@ describe('PATCH /api/settings/spheres/[sphereId]', () => {
     expect(body.error).toBe('Period already mapped to another sphere')
   })
 
+  it('409 when queue_slug already used by another sphere (new model)', async () => {
+    mockSupabase({
+      sphere: { id: SPHERE_ID, user_id: 'user-1', period_id: null, queue_slug: null },
+      periodRow: { queue_slug: 'work', period_slug: 'work-morning' },
+      periodConflict: { id: OTHER_SPHERE_ID },
+    })
+    const req = makeRequest(SPHERE_ID, { period_id: PERIOD_ID })
+    const res = await PATCH(req, makeParams())
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.error).toBe('Activity group already mapped to another sphere')
+  })
+
   it('200 with valid period_id', async () => {
-    mockSupabase({ sphere: { id: SPHERE_ID, user_id: 'user-1', period_id: null }, periodConflict: null })
+    mockSupabase({
+      sphere: { id: SPHERE_ID, user_id: 'user-1', period_id: null, queue_slug: null },
+      periodRow: { queue_slug: null, period_slug: null },
+      periodConflict: null,
+    })
     const req = makeRequest(SPHERE_ID, { period_id: PERIOD_ID })
     const res = await PATCH(req, makeParams())
     expect(res.status).toBe(200)
     const body = await res.json()
     expect(body.success).toBe(true)
-    expect(updateSphere).toHaveBeenCalledWith(expect.anything(), SPHERE_ID, { period_id: PERIOD_ID })
+    expect(updateSphere).toHaveBeenCalledWith(expect.anything(), SPHERE_ID, { period_id: PERIOD_ID, queue_slug: null })
   })
 
   it('200 with period_id: null (unmap)', async () => {
-    mockSupabase({ sphere: { id: SPHERE_ID, user_id: 'user-1', period_id: PERIOD_ID } })
+    mockSupabase({ sphere: { id: SPHERE_ID, user_id: 'user-1', period_id: PERIOD_ID, queue_slug: null } })
     const req = makeRequest(SPHERE_ID, { period_id: null })
     const res = await PATCH(req, makeParams())
     expect(res.status).toBe(200)
-    expect(updateSphere).toHaveBeenCalledWith(expect.anything(), SPHERE_ID, { period_id: null })
+    expect(updateSphere).toHaveBeenCalledWith(expect.anything(), SPHERE_ID, { period_id: null, queue_slug: null })
   })
 
   it('400 when body is malformed', async () => {

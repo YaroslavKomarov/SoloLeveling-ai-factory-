@@ -51,17 +51,42 @@ export async function runOnboardingAgent(params: {
     try {
       const periods = await getActivityPeriodsByUser(supabase, userId)
       if (periods.length > 0) {
-        const periodsList = periods
-          .map((p) => `- id=${p.id} | ${p.name} (дни: ${p.days_of_week.join(',')}, ${p.start_time}–${p.end_time})`)
-          .join('\n')
+        // Group periods by queue_slug — each group maps to one sphere.
+        // Multiple time slots (e.g. work-morning + work-evening) sharing a queue_slug
+        // form one activity group and should become one sphere.
+        const groups = new Map<string, typeof periods>()
+        for (const p of periods) {
+          const key = p.queue_slug ?? p.period_slug ?? p.id
+          const group = groups.get(key) ?? []
+          group.push(p)
+          groups.set(key, group)
+        }
+
+        const groupsList = Array.from(groups.entries())
+          .map(([queueSlug, slots]) => {
+            const slotLines = slots
+              .map((p) => `  - id=${p.id} | ${p.name} (дни: ${p.days_of_week.join(',')}, ${p.start_time}–${p.end_time})`)
+              .join('\n')
+            return `Группа "${queueSlug}" → одна сфера:\n${slotLines}\n  queue_slug: "${queueSlug}"`
+          })
+          .join('\n\n')
+
         systemPrompt = `${ONBOARDING_SYSTEM_PROMPT}
 
-## CURRENT ACTIVITY PERIODS (authoritative — use these IDs for create_sphere)
+## ТЕКУЩИЕ ПЕРИОДЫ АКТИВНОСТИ — сгруппированы по queue_slug (авторитетные данные)
 
-${periodsList}
+${groupsList}
 
-Always use the id values above as period_id when calling create_sphere. Do NOT use IDs from chat history.`
-        logger.debug('[FIX] injected activity periods into system prompt', { userId, count: periods.length })
+При вызове create_sphere передавай queue_slug (НЕ period_id).
+Одна сфера = один период активности = один queue_slug.
+Несколько временных слотов с одним queue_slug делят одну сферу.
+Не используй id или queue_slug из истории чата — только значения выше.`
+
+        logger.debug('[onboarding] injected period groups into prompt', {
+          userId,
+          groupCount: groups.size,
+          totalPeriods: periods.length,
+        })
       }
     } catch (err) {
       logger.warn('[FIX] failed to fetch activity periods for prompt injection', { userId, error: err instanceof Error ? err.message : String(err) })
