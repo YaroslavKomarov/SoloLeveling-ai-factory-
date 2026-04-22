@@ -277,6 +277,7 @@ export function OnboardingChat() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const pushHandledRef = useRef(false)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const redirectedRef = useRef(false)
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -336,17 +337,29 @@ export function OnboardingChat() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, phase, sessionLoaded])
 
-  // Detect [ONBOARDING_COMPLETE] marker → redirect
+  // Detect [ONBOARDING_COMPLETE] marker or restored complete phase → redirect
   useEffect(() => {
-    const hasComplete = messages.some(
-      (m) => m.role === 'assistant' && m.content.includes(MARKER_COMPLETE)
-    )
-    if (hasComplete && phase !== 'complete') {
-      setPhase('complete')
-      logger.info('onboarding complete — redirecting')
-      setTimeout(() => router.push('/app/goals'), 1500)
-    }
-  }, [messages, phase, setPhase, router])
+    if (!sessionLoaded || redirectedRef.current) return
+
+    const hasComplete =
+      phase === 'complete' ||
+      messages.some((m) => m.role === 'assistant' && m.content.includes(MARKER_COMPLETE))
+
+    if (!hasComplete) return
+
+    redirectedRef.current = true
+    if (phase !== 'complete') setPhase('complete')
+
+    logger.info('[FIX] onboarding complete — marking DB and redirecting')
+
+    // Ensure onboarding_completed=true in DB regardless of whether the agent tool fired
+    fetch('/api/onboarding/complete', { method: 'POST' })
+      .then(() => logger.info('[FIX] onboarding_completed set in DB'))
+      .catch((err) => logger.warn('[FIX] failed to mark onboarding complete', { error: err instanceof Error ? err.message : String(err) }))
+      .finally(() => {
+        setTimeout(() => router.push('/app/today'), 800)
+      })
+  }, [messages, phase, setPhase, router, sessionLoaded])
 
   // Detect [REQUEST_PUSH_PERMISSION] marker → trigger browser dialog once
   useEffect(() => {
@@ -656,7 +669,7 @@ export function OnboardingChat() {
             lineHeight: 1.5,
             fontFamily: 'inherit',
             outline: 'none',
-            overflowY: 'hidden',
+            overflowY: 'auto',
             minHeight: '42px',
             maxHeight: '120px',
           }}
