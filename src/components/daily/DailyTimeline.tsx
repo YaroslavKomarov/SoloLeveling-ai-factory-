@@ -129,7 +129,7 @@ export function DailyTimeline({ initialExpandedId }: Props) {
                     ? 'border-white/40 bg-white/10 text-white'
                     : 'border-white/20 bg-white/5 text-white/60'
                 }`}
-                style={{ left: `${startPct}%`, width: `${widthPct}%`, minWidth: '80px' }}
+                style={{ left: `${startPct}%`, width: `${widthPct}%` }}
                 title={period.name}
               >
                 {period.name}

@@ -452,7 +452,16 @@ export function SettingsClient({ user, spheres: initialSpheres, periods }: Setti
               marginBottom: '0.75rem',
             }}
           >
-            Use this token in the SchedulerBot Telegram bot to sync your activity periods.
+            To sync your activity periods — copy the token and send it to{' '}
+            <a
+              href="https://t.me/SoloLevelingSchedulerBot"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#00d4ff', textDecoration: 'none' }}
+            >
+              @SoloLevelingSchedulerBot
+            </a>{' '}
+            in Telegram. Do this again any time you change your schedule in the bot.
           </p>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <span
@@ -498,6 +507,27 @@ export function SettingsClient({ user, spheres: initialSpheres, periods }: Setti
             >
               {sbTokenCopied ? 'Copied' : 'Copy'}
             </button>
+            <a
+              href="https://t.me/SoloLevelingSchedulerBot"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                padding: '0.375rem 0.875rem',
+                backgroundColor: 'transparent',
+                border: '1px solid rgba(0,212,255,0.25)',
+                color: 'rgba(0,212,255,0.7)',
+                fontFamily: 'Cinzel, serif',
+                fontSize: '0.5625rem',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                textDecoration: 'none',
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              Open Bot
+            </a>
           </div>
         </div>
 

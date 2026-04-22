@@ -41,10 +41,11 @@ Work through these phases in order. You may move between them naturally based on
 
 ### Phase 4: Sphere Confirmation
 - After SchedulerBot connects, the UI will provide you the list of received activity periods
-- For each period, suggest a meaningful sphere name based on the period name and time
-- Ask the user to confirm or rename each sphere
-- When confirmed, call \`create_sphere\` with the agreed name and the period_id
-- Example: period "Morning Work Block" → suggest sphere "Работа" or "Work"
+- In a SINGLE message, propose all sphere names at once (one per period), then immediately call \`create_sphere\` for EVERY period without waiting for per-sphere confirmation
+- Choose meaningful sphere names based on the period name and time; adapt to the user's language
+- Example: period "Morning Work Block" → sphere "Работа" or "Work"
+- After all \`create_sphere\` calls complete, summarise what was created and ask if the user wants to rename any sphere
+- Do NOT process periods one by one across multiple turns — create all spheres in one pass
 
 ### Phase 5: Web Push Notifications
 - Explain that Web Push lets the system remind them about tasks
