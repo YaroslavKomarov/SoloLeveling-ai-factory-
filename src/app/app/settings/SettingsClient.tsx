@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useCallback, useEffect } from 'react'
+import { useState, useTransition, useCallback, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { togglePushNotifications, changeEmail } from '@/lib/settings/actions'
 import { createLogger } from '@/lib/logger'
@@ -33,35 +33,50 @@ interface SettingsClientProps {
 
 // ─── Sphere row ──────────────────────────────────────────────────────────────
 
+interface PeriodGroup {
+  queueSlug: string
+  label: string
+  days: number[]
+}
+
 interface SphereRowProps {
   sphere: { id: string; name: string; period_id: string | null; queue_slug: string | null }
   periods: SettingsClientProps['periods']
   usedQueueSlugs: Set<string>
-  onSaved: (sphereId: string, periodId: string | null, queueSlug: string | null) => void
+  onSaved: (sphereId: string, queueSlug: string | null) => void
 }
 
 function SpherePeriodRow({ sphere, periods, usedQueueSlugs, onSaved }: SphereRowProps) {
-  const [selected, setSelected] = useState<string>(sphere.period_id ?? '')
+  const [selected, setSelected] = useState<string>(sphere.queue_slug ?? '')
   const [isSaving, setIsSaving] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
-  // A period is available if its queue_slug is not occupied by another sphere.
-  // The current sphere's own period is always available (so the user can re-save it).
-  const availablePeriods = periods.filter(
-    (p) => !usedQueueSlugs.has(p.queue_slug ?? p.id) || p.id === sphere.period_id
-  )
+  // Deduplicate periods by queue_slug — show one entry per activity group.
+  // A group is available if its queue_slug is not taken by another sphere,
+  // or if it's the current sphere's own group (so re-saving works).
+  const availableGroups = useMemo<PeriodGroup[]>(() => {
+    const seen = new Map<string, PeriodGroup>()
+    for (const p of periods) {
+      const qs = p.queue_slug
+      if (!qs || seen.has(qs)) continue
+      seen.set(qs, { queueSlug: qs, label: p.name, days: p.days_of_week })
+    }
+    return Array.from(seen.values()).filter(
+      (g) => !usedQueueSlugs.has(g.queueSlug) || g.queueSlug === sphere.queue_slug
+    )
+  }, [periods, usedQueueSlugs, sphere.queue_slug])
 
   const handleSave = async () => {
     setIsSaving(true)
     setMsg(null)
-    const periodId = selected || null
-    logger.debug('[SpherePeriodRow] saving', { sphereId: sphere.id, period_id: periodId })
+    const queueSlug = selected || null
+    logger.debug('[SpherePeriodRow] saving', { sphereId: sphere.id, queue_slug: queueSlug })
 
     try {
       const res = await fetch(`/api/settings/spheres/${sphere.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ period_id: periodId }),
+        body: JSON.stringify({ queue_slug: queueSlug }),
       })
 
       if (!res.ok) {
@@ -71,9 +86,9 @@ function SpherePeriodRow({ sphere, periods, usedQueueSlugs, onSaved }: SphereRow
 
       const responseData = await res.json() as { sphere?: { queue_slug?: string | null } }
       const savedQueueSlug = responseData.sphere?.queue_slug ?? null
-      logger.info('[SpherePeriodRow] saved', { sphereId: sphere.id, period_id: periodId, queue_slug: savedQueueSlug })
+      logger.info('[SpherePeriodRow] saved', { sphereId: sphere.id, queue_slug: savedQueueSlug })
       setMsg('Saved')
-      onSaved(sphere.id, periodId, savedQueueSlug)
+      onSaved(sphere.id, savedQueueSlug)
       setTimeout(() => setMsg(null), 2000)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -126,12 +141,12 @@ function SpherePeriodRow({ sphere, periods, usedQueueSlugs, onSaved }: SphereRow
         <option value="" style={{ backgroundColor: '#0a0c10' }}>
           — not mapped —
         </option>
-        {availablePeriods.map((p) => (
-          <option key={p.id} value={p.id} style={{ backgroundColor: '#0a0c10' }}>
-            {p.name} — {formatDays(p.days_of_week)} {p.start_time.slice(0, 5)}–{p.end_time.slice(0, 5)}
+        {availableGroups.map((g) => (
+          <option key={g.queueSlug} value={g.queueSlug} style={{ backgroundColor: '#0a0c10' }}>
+            {g.label} — {formatDays(g.days)}
           </option>
         ))}
-        {availablePeriods.length === 0 && !sphere.period_id && (
+        {availableGroups.length === 0 && !sphere.queue_slug && (
           <option disabled>All periods already mapped</option>
         )}
       </select>
@@ -210,8 +225,8 @@ export function SettingsClient({ user, spheres: initialSpheres, periods }: Setti
     [spheres]
   )
 
-  const handleSphereSaved = useCallback((sphereId: string, periodId: string | null, queueSlug: string | null) => {
-    setSpheres((prev) => prev.map((s) => s.id === sphereId ? { ...s, period_id: periodId, queue_slug: queueSlug } : s))
+  const handleSphereSaved = useCallback((sphereId: string, queueSlug: string | null) => {
+    setSpheres((prev) => prev.map((s) => s.id === sphereId ? { ...s, queue_slug: queueSlug } : s))
   }, [])
 
   const handlePushToggle = () => {
