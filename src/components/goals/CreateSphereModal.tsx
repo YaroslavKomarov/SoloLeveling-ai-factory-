@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -16,6 +16,15 @@ import { createClient } from '@/lib/supabase/client'
 import { createLogger } from '@/lib/logger'
 import { useGoalsStore } from '@/store/goals'
 import type { ActivityPeriodRow, SphereRow } from '@/lib/supabase/types'
+
+interface PeriodGroup {
+  key: string
+  name: string
+  days: number[]
+  queue_slug: string | null
+  period_id: string
+  periods: ActivityPeriodRow[]
+}
 
 const logger = createLogger('CreateSphereModal')
 
@@ -35,7 +44,7 @@ const schema = z.object({
   name: z.string().min(1, 'Name is required').max(50, 'Name too long'),
   description: z.string().max(200, 'Description too long').optional(),
   icon: z.string().min(1, 'Select an icon'),
-  period_id: z.string().min(1, 'Select an activity period'),
+  activity_group: z.string().min(1, 'Select an activity period'),
 })
 
 type FormValues = z.infer<typeof schema>
@@ -80,8 +89,24 @@ export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: 
       .finally(() => setPeriodsLoading(false))
   }, [isOpen, userId])
 
-  const occupiedPeriodIds = new Set(existingSpheres.map(s => s.period_id).filter(Boolean))
-  const availablePeriods = allPeriods.filter(p => !occupiedPeriodIds.has(p.id))
+  // Group individual time-slot rows by queue_slug (one entry per activity group)
+  const periodGroups = useMemo<PeriodGroup[]>(() => {
+    const groups = new Map<string, PeriodGroup>()
+    for (const period of allPeriods) {
+      const key = period.queue_slug ?? period.id
+      if (!groups.has(key)) {
+        groups.set(key, { key, name: period.name, days: period.days_of_week, queue_slug: period.queue_slug, period_id: period.id, periods: [] })
+      }
+      groups.get(key)!.periods.push(period)
+    }
+    return Array.from(groups.values())
+  }, [allPeriods])
+
+  // Occupied check by queue_slug (primary) or period_id (legacy)
+  const occupiedKeys = useMemo(() => {
+    return new Set(existingSpheres.map(s => s.queue_slug ?? s.period_id).filter(Boolean))
+  }, [existingSpheres])
+  const availableGroups = periodGroups.filter(g => !occupiedKeys.has(g.key))
 
   const {
     register,
@@ -114,7 +139,12 @@ export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: 
       return
     }
 
-    logger.debug('[CreateSphereModal] submitting', { name: values.name, period_id: values.period_id })
+    const group = periodGroups.find(g => g.key === values.activity_group)
+    if (!group) {
+      setError('activity_group', { message: 'Invalid selection' })
+      return
+    }
+    logger.debug('[FIX] [CreateSphereModal] submitting with group', { name: values.name, queue_slug: group.queue_slug, period_id: group.period_id })
     setIsSubmitting(true)
     setSubmitError(null)
 
@@ -126,7 +156,8 @@ export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: 
         description: values.description ?? null,
         icon: values.icon,
         order_index: 0,
-        period_id: values.period_id,
+        period_id: group.period_id,
+        queue_slug: group.queue_slug ?? undefined,
       })
       addSphere(sphere)
       handleClose()
@@ -144,8 +175,8 @@ export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: 
 
   if (!mounted) return null
 
-  const noPeriods = !periodsLoading && allPeriods.length === 0
-  const allOccupied = !periodsLoading && allPeriods.length > 0 && availablePeriods.length === 0
+  const noPeriods = !periodsLoading && periodGroups.length === 0
+  const allOccupied = !periodsLoading && periodGroups.length > 0 && availableGroups.length === 0
   const periodSelectDisabled = periodsLoading || noPeriods || allOccupied
 
   let periodHelperText: string | null = null
@@ -291,11 +322,11 @@ export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: 
                   Activity Period
                 </label>
                 <select
-                  {...register('period_id')}
+                  {...register('activity_group')}
                   disabled={periodSelectDisabled}
                   style={{
                     backgroundColor: '#0a0c10',
-                    border: `1px solid ${errors.period_id ? '#ef4444' : 'rgba(255,255,255,0.15)'}`,
+                    border: `1px solid ${errors.activity_group ? '#ef4444' : 'rgba(255,255,255,0.15)'}`,
                     color: periodSelectDisabled ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.85)',
                     padding: '0.5rem 0.75rem',
                     fontSize: '0.875rem',
@@ -310,9 +341,11 @@ export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: 
                   ) : (
                     <>
                       <option value="" style={{ backgroundColor: '#0a0c10' }}>Select a period…</option>
-                      {availablePeriods.map(p => (
-                        <option key={p.id} value={p.id} style={{ backgroundColor: '#0a0c10' }}>
-                          {p.name} — {formatDays(p.days_of_week)} {p.start_time.slice(0, 5)}–{p.end_time.slice(0, 5)}
+                      {availableGroups.map(g => (
+                        <option key={g.key} value={g.key} style={{ backgroundColor: '#0a0c10' }}>
+                          {g.periods.length === 1
+                            ? `${g.name} — ${formatDays(g.days)} ${g.periods[0].start_time.slice(0, 5)}–${g.periods[0].end_time.slice(0, 5)}`
+                            : `${g.name} — ${formatDays(g.days)}`}
                         </option>
                       ))}
                     </>
@@ -323,9 +356,9 @@ export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: 
                     {periodHelperText}
                   </p>
                 )}
-                {errors.period_id && (
+                {errors.activity_group && (
                   <p style={{ fontSize: '0.875rem', color: '#ef4444', fontFamily: 'Cormorant, serif', margin: 0 }}>
-                    {errors.period_id.message}
+                    {errors.activity_group.message}
                   </p>
                 )}
               </div>

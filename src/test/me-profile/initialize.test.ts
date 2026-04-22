@@ -11,17 +11,15 @@ vi.mock('@/lib/supabase/notes', () => ({
 import * as notesModule from '@/lib/supabase/notes'
 
 describe('generateProfileMd', () => {
-  it('includes required frontmatter fields', () => {
-    const md = generateProfileMd({ name: 'Alice', timezone: 'UTC', activityWindow: '09:00–21:00' })
-    expect(md).toContain('name: Alice')
-    expect(md).toContain('timezone: UTC')
-    expect(md).toContain('activity_window: 09:00–21:00')
+  it('includes type frontmatter', () => {
+    const md = generateProfileMd()
+    expect(md).toContain('type: profile')
     expect(md).toContain('created_at:')
   })
 
-  it('includes the name in body', () => {
-    const md = generateProfileMd({ name: 'Bob', timezone: 'Europe/Berlin', activityWindow: '08:00–20:00' })
-    expect(md).toContain('Bob')
+  it('includes Profile heading', () => {
+    const md = generateProfileMd()
+    expect(md).toContain('# Profile')
   })
 })
 
@@ -35,7 +33,6 @@ describe('generatePatternsMd', () => {
 describe('initializeUserProfile', () => {
   const mockSupabase = {} as Parameters<typeof initializeUserProfile>[0]
   const userId = 'test-user-id'
-  const profileData = { name: 'Alice', timezone: 'UTC', activityWindow: '09:00–21:00' }
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -55,25 +52,24 @@ describe('initializeUserProfile', () => {
     }))
   })
 
-  it('creates exactly 6 notes', async () => {
-    await initializeUserProfile(mockSupabase, userId, profileData)
-    expect(notesModule.createNote).toHaveBeenCalledTimes(6)
+  it('creates exactly 5 notes', async () => {
+    await initializeUserProfile(mockSupabase, userId)
+    expect(notesModule.createNote).toHaveBeenCalledTimes(5)
   })
 
   it('creates all required @me paths', async () => {
-    await initializeUserProfile(mockSupabase, userId, profileData)
+    await initializeUserProfile(mockSupabase, userId)
     const calls = vi.mocked(notesModule.createNote).mock.calls
     const paths = calls.map((call) => call[1].path)
     expect(paths).toContain('@me/profile.md')
-    expect(paths).toContain('@me/career.md')
-    expect(paths).toContain('@me/skills.md')
-    expect(paths).toContain('@me/interests.md')
-    expect(paths).toContain('@me/personality.md')
+    expect(paths).toContain('@me/projects.md')
+    expect(paths).toContain('@me/schedule.md')
+    expect(paths).toContain('@me/periodic.md')
     expect(paths).toContain('@me/patterns.md')
   })
 
   it('sets is_readonly=true for patterns.md', async () => {
-    await initializeUserProfile(mockSupabase, userId, profileData)
+    await initializeUserProfile(mockSupabase, userId)
     const calls = vi.mocked(notesModule.createNote).mock.calls
     const patternsCall = calls.find((call) => call[1].path === '@me/patterns.md')
     expect(patternsCall).toBeDefined()
@@ -88,13 +84,7 @@ describe('initializeUserProfile', () => {
       created_at: '', updated_at: '',
     })
 
-    await initializeUserProfile(mockSupabase, userId, profileData)
+    await initializeUserProfile(mockSupabase, userId)
     expect(notesModule.createNote).not.toHaveBeenCalled()
-  })
-
-  it('returns success:true on success', async () => {
-    const result = await initializeUserProfile(mockSupabase, userId, profileData)
-    expect(result.success).toBe(true)
-    expect(result.error).toBeUndefined()
   })
 })
