@@ -119,10 +119,8 @@ export async function POST(request: NextRequest) {
       )
     } catch (ctxErr) {
       const msg = ctxErr instanceof Error ? ctxErr.message : String(ctxErr)
-      const isNetworkErr = msg.includes('fetch failed') || msg.includes('network error') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')
-      logger.error('[FIX] buildContextMessages failed', { userId, sphereId, error: msg, isNetworkErr })
-      if (!isNetworkErr) throw ctxErr   // re-throw unexpected errors; swallow network-only
-      // continue with empty context — user will lose history but can still talk
+      logger.error('[FIX] buildContextMessages failed — continuing with empty context', { userId, sphereId, error: msg })
+      // Swallow all context errors — losing history is always better than a 500
     }
 
     // 7. Save the new user message to DB
@@ -167,13 +165,37 @@ export async function POST(request: NextRequest) {
     if (forceGenerate && forceToolName) {
       logger.info('[FIX] generateText forced tool call', { forceToolName, messageCount: messages.length })
 
-      const genResult = await generateText({
-        model: getSmartModel(),
-        system: systemPrompt,
-        messages,
-        tools,
-        toolChoice: { type: 'tool' as const, toolName: forceToolName as keyof typeof tools },
-      })
+      // Retry once on transient "Invalid JSON response" (Anthropic API overload / rate limit returns non-JSON body)
+      let genResult: Awaited<ReturnType<typeof generateText>>
+      try {
+        genResult = await generateText({
+          model: getSmartModel(),
+          system: systemPrompt,
+          messages,
+          tools,
+          maxOutputTokens: 16000,
+          toolChoice: { type: 'tool' as const, toolName: forceToolName as keyof typeof tools },
+        })
+      } catch (firstErr) {
+        const firstMsg = firstErr instanceof Error ? firstErr.message : String(firstErr)
+        logger.warn('[FIX] generateText first attempt failed, retrying', {
+          forceToolName,
+          error: firstMsg,
+          errorName: firstErr instanceof Error ? firstErr.name : typeof firstErr,
+          errorCause: firstErr instanceof Error && firstErr.cause ? String(firstErr.cause) : undefined,
+          stack: firstErr instanceof Error ? firstErr.stack?.split('\n').slice(0, 4).join(' | ') : undefined,
+        })
+        // Small delay before retry to let upstream recover
+        await new Promise(r => setTimeout(r, 2000))
+        genResult = await generateText({
+          model: getSmartModel(),
+          system: systemPrompt,
+          messages,
+          tools,
+          maxOutputTokens: 16000,
+          toolChoice: { type: 'tool' as const, toolName: forceToolName as keyof typeof tools },
+        })
+      }
 
       logger.info('[FIX] generateText result', {
         finishReason: genResult.finishReason,
@@ -261,7 +283,14 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
-    logger.error('streaming failed', { userId, sphereId, error: errorMessage })
+    logger.error('streaming failed', {
+      userId,
+      sphereId,
+      error: errorMessage,
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorCause: error instanceof Error && error.cause ? String(error.cause) : undefined,
+      stack: error instanceof Error ? error.stack?.split('\n').slice(0, 5).join(' | ') : undefined,
+    })
     return NextResponse.json(
       { error: process.env.NODE_ENV === 'development' ? errorMessage : 'Internal server error' },
       { status: 500 }
