@@ -178,15 +178,15 @@ export async function POST(request: NextRequest) {
         })
       } catch (firstErr) {
         const firstMsg = firstErr instanceof Error ? firstErr.message : String(firstErr)
+        const e = firstErr as Record<string, unknown>
         logger.warn('[FIX] generateText first attempt failed, retrying', {
           forceToolName,
           error: firstMsg,
           errorName: firstErr instanceof Error ? firstErr.name : typeof firstErr,
-          errorCause: firstErr instanceof Error && firstErr.cause ? String(firstErr.cause) : undefined,
+          statusCode: e?.statusCode,
+          responseBody: typeof e?.responseBody === 'string' ? e.responseBody.slice(0, 500) : e?.responseBody,
           stack: firstErr instanceof Error ? firstErr.stack?.split('\n').slice(0, 4).join(' | ') : undefined,
         })
-        // Small delay before retry to let upstream recover
-        await new Promise(r => setTimeout(r, 2000))
         genResult = await generateText({
           model: getSmartModel(),
           system: systemPrompt,
@@ -283,12 +283,14 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
+    const e = error as Record<string, unknown>
     logger.error('streaming failed', {
       userId,
       sphereId,
       error: errorMessage,
       errorName: error instanceof Error ? error.name : typeof error,
-      errorCause: error instanceof Error && error.cause ? String(error.cause) : undefined,
+      statusCode: e?.statusCode,
+      responseBody: typeof e?.responseBody === 'string' ? e.responseBody.slice(0, 500) : e?.responseBody,
       stack: error instanceof Error ? error.stack?.split('\n').slice(0, 5).join(' | ') : undefined,
     })
     return NextResponse.json(
