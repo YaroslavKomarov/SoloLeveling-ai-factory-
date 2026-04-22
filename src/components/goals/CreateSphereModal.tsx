@@ -294,7 +294,7 @@ export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: 
                   {...register('period_id')}
                   disabled={periodSelectDisabled}
                   style={{
-                    background: 'rgba(255,255,255,0.05)',
+                    backgroundColor: '#0a0c10',
                     border: `1px solid ${errors.period_id ? '#ef4444' : 'rgba(255,255,255,0.15)'}`,
                     color: periodSelectDisabled ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.85)',
                     padding: '0.5rem 0.75rem',
@@ -302,15 +302,16 @@ export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: 
                     fontFamily: 'Cormorant, Georgia, serif',
                     cursor: periodSelectDisabled ? 'not-allowed' : 'pointer',
                     width: '100%',
+                    outline: 'none',
                   }}
                 >
                   {periodsLoading ? (
-                    <option value="" disabled>Loading periods…</option>
+                    <option value="" disabled style={{ backgroundColor: '#0a0c10' }}>Loading periods…</option>
                   ) : (
                     <>
-                      <option value="">Select a period…</option>
+                      <option value="" style={{ backgroundColor: '#0a0c10' }}>Select a period…</option>
                       {availablePeriods.map(p => (
-                        <option key={p.id} value={p.id}>
+                        <option key={p.id} value={p.id} style={{ backgroundColor: '#0a0c10' }}>
                           {p.name} — {formatDays(p.days_of_week)} {p.start_time.slice(0, 5)}–{p.end_time.slice(0, 5)}
                         </option>
                       ))}
