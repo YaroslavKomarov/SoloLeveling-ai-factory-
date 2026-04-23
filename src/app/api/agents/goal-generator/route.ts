@@ -179,14 +179,17 @@ export async function POST(request: NextRequest) {
       } catch (firstErr) {
         const firstMsg = firstErr instanceof Error ? firstErr.message : String(firstErr)
         const e = firstErr as Record<string, unknown>
-        logger.warn('[FIX] generateText first attempt failed, retrying', {
+        const statusCode = e?.statusCode as number | undefined
+        logger.warn('[FIX] generateText first attempt failed', {
           forceToolName,
           error: firstMsg,
           errorName: firstErr instanceof Error ? firstErr.name : typeof firstErr,
-          statusCode: e?.statusCode,
+          statusCode,
           responseBody: typeof e?.responseBody === 'string' ? e.responseBody.slice(0, 500) : e?.responseBody,
           stack: firstErr instanceof Error ? firstErr.stack?.split('\n').slice(0, 4).join(' | ') : undefined,
         })
+        // 400 = schema/prompt rejected by model — retry is pointless, re-throw immediately
+        if (statusCode === 400) throw firstErr
         genResult = await generateText({
           model: getSmartModel(),
           system: systemPrompt,

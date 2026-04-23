@@ -51,7 +51,7 @@ export function getSmartModel(): LanguageModel {
   logger.debug(`[FIX] getSmartModel provider=${provider}`)
 
   if (provider === 'openrouter') {
-    const modelId = process.env.OPENROUTER_SMART_MODEL ?? 'anthropic/claude-sonnet-4-5'
+    const modelId = process.env.OPENROUTER_SMART_MODEL ?? 'anthropic/claude-sonnet-4.6'
     logger.debug(`[FIX] OpenRouter smart model: ${modelId}`)
     // Use .chat() to force Chat Completions API — OpenRouter's Responses API
     // rejects the content-as-array format that @ai-sdk/openai v3 sends by default.

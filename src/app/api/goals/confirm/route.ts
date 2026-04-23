@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
     }
 
     const today = new Date().toISOString().slice(0, 10)
+    const startPlusNinety = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
     // 1. Create goal
     const goalInsert: GoalInsert = {
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
       description: description ?? null,
       goal_type: goalType,
       start_date: today,
-      end_date: today,  // legacy field; not used for queue-based goals
+      end_date: startPlusNinety,  // constraint requires end_date = start_date + 90 days
       deadline_date: deadlineDate ?? null,
     }
 
