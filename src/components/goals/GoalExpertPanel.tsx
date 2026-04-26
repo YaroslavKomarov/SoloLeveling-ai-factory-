@@ -54,7 +54,7 @@ interface GoalExpertPanelProps {
 // GoalChatSessionList — left panel
 // =============================================================
 
-function GoalChatSessionList({ goalId }: { goalId: string }) {
+function GoalChatSessionList({ goalId, onClose }: { goalId: string; onClose?: () => void }) {
   const sessions = useGoalExpertStore((s) => s.sessions)
   const activeSessionId = useGoalExpertStore((s) => s.activeSessionId)
   const setSessions = useGoalExpertStore((s) => s.setSessions)
@@ -174,22 +174,33 @@ function GoalChatSessionList({ goalId }: { goalId: string }) {
         >
           Sessions
         </span>
-        <button
-          onClick={handleCreateSession}
-          disabled={isCreating}
-          title="New Chat"
-          style={{
-            background: 'none',
-            border: '1px solid rgba(255,255,255,0.12)',
-            cursor: isCreating ? 'not-allowed' : 'pointer',
-            padding: '4px',
-            color: isCreating ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          {isCreating ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Plus size={12} />}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            onClick={handleCreateSession}
+            disabled={isCreating}
+            title="New Chat"
+            style={{
+              background: 'none',
+              border: '1px solid rgba(255,255,255,0.12)',
+              cursor: isCreating ? 'not-allowed' : 'pointer',
+              padding: '4px',
+              color: isCreating ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.5)',
+              display: 'flex',
+              alignItems: 'center',
+            }}
+          >
+            {isCreating ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Plus size={12} />}
+          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              title="Close"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: '4px', display: 'flex', alignItems: 'center' }}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Session list */}
@@ -1160,15 +1171,7 @@ export function GoalExpertPanel({ goalId, initialTaskSession }: GoalExpertPanelP
           } : {}),
         }}
       >
-        <GoalChatSessionList goalId={goalId} />
-        {isMobile && (
-          <button
-            onClick={() => setShowSessionList(false)}
-            style={{ position: 'absolute', top: '12px', right: '12px', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: '4px', display: 'flex', alignItems: 'center' }}
-          >
-            <X size={14} />
-          </button>
-        )}
+        <GoalChatSessionList goalId={goalId} onClose={isMobile ? () => setShowSessionList(false) : undefined} />
       </div>
 
       {/* Chat window: full-width on mobile */}

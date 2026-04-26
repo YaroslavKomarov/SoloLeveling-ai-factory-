@@ -10,6 +10,7 @@ import { createGoal, createQuests, clearDialogMessages, getActiveGoalBySphere } 
 import { createTasks } from '@/lib/supabase/tasks'
 import { createNote } from '@/lib/supabase/notes'
 import { getSphereById } from '@/lib/supabase/spheres'
+import { dispatchGoalTasksToSchedulerbot } from '@/lib/services/goal-dispatch'
 import { createLogger } from '@/lib/logger'
 import type { GoalInsert, GoalType, QuestDraft, QuestInsert, TaskInsert, QueueTaskEntry } from '@/lib/supabase/types'
 
@@ -141,7 +142,7 @@ export async function POST(request: NextRequest) {
 
         await createNote(supabase, {
           user_id: user.id,
-          path: `domains/${sphereSlug}/${goalSlug}/goal.md`,
+          path: `${sphereSlug}/${goalSlug}/goal.md`,
           title: goal.title,
           content: `---\ntype: goal\ngoal_id: ${goal.id}\nsphere_id: ${sphereId}\nstart_date: ${today}\ndeadline_date: ${deadlineDate ?? 'none'}\n---\n# ${goal.title}\n\n## Key Results\n${questChecklist}\n`,
         })
@@ -151,7 +152,7 @@ export async function POST(request: NextRequest) {
         for (let i = 0; i < (materials?.length ?? 0); i++) {
           const material = materials![i]
           const materialSlug = material.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30)
-          const path = `domains/${sphereSlug}/${goalSlug}/materials/${i + 1}-${materialSlug}.md`
+          const path = `${sphereSlug}/${goalSlug}/materials/${i + 1}-${materialSlug}.md`
           const content = `---\ntitle: "${material.title}"\nurl: ${material.url ?? 'none'}\ndate: ${today}\n---\n\n${material.content}`
           logger.debug('saving material note', { path, contentLength: content.length })
           await createNote(supabase, {
@@ -161,6 +162,15 @@ export async function POST(request: NextRequest) {
             content,
           })
         }
+        logger.debug('dispatching tasks to schedulerbot', { goalId: goal.id, taskCount: createdTasks.length })
+        await dispatchGoalTasksToSchedulerbot({
+          supabase,
+          userId: user.id,
+          sphereId,
+          goalId: goal.id,
+          tasks: createdTasks,
+          deadlineDate: deadlineDate ?? null,
+        })
       } catch (err) {
         logger.warn('Goal note / materials auto-creation failed (non-blocking)', {
           goalId: goal.id,

@@ -1,7 +1,7 @@
 /**
  * HTTP client for ShedulerBot's external task API.
  * Requires SCHEDULERBOT_URL and SCHEDULERBOT_API_KEY env vars.
- * ShedulerBot POST /api/tasks is idempotent on external_id.
+ * ShedulerBot POST /api/tasks/batch is idempotent on external_id.
  */
 import { createLogger } from '@/lib/logger'
 
@@ -11,17 +11,28 @@ export interface SchedulerbotTask {
   external_id: string
   title: string
   description?: string
-  // Must equal the sphere's queue_slug (= ShedulerBot queue identifier).
-  // Do NOT use the time-slot's period_slug — that identifies a time window, not a task queue.
-  // Source: sphere.queue_slug via getQueueSlugForSphere() in src/lib/supabase/spheres.ts
+  // sphere.queue_slug — activity-group key, not a time-slot period_slug
   period_slug: string
-  due_date?: string  // ISO date string
+  deadline_date?: string   // ISO date string
+  estimated_minutes: number
+}
+
+export interface SchedulerbotBatchRequest {
+  schedulerbot_token: string
+  tasks: SchedulerbotTask[]
 }
 
 export interface SchedulerbotTaskResult {
-  id: string
   external_id: string
-  created: boolean  // false when deduped by external_id
+  id: string
+  created: boolean
+}
+
+export interface SchedulerbotBatchResult {
+  created: number
+  skipped: number
+  failed: number
+  results: SchedulerbotTaskResult[]
 }
 
 function getConfig(): { url: string; apiKey: string } {
@@ -34,32 +45,29 @@ function getConfig(): { url: string; apiKey: string } {
   return { url, apiKey }
 }
 
-export async function sendTaskToSchedulerbot(
-  task: SchedulerbotTask
-): Promise<SchedulerbotTaskResult> {
+export async function sendBatchToSchedulerbot(
+  request: SchedulerbotBatchRequest
+): Promise<SchedulerbotBatchResult> {
   const { url, apiKey } = getConfig()
-  const endpoint = `${url}/api/tasks`
+  const endpoint = `${url}/api/tasks/batch`
 
-  logger.info('[SchedulerbotClient.sendTask] dispatching task', {
-    externalId: task.external_id,
-    periodSlug: task.period_slug,
-    title: task.title,
+  logger.info('[SchedulerbotClient.sendBatch] dispatching batch', {
+    taskCount: request.tasks.length,
   })
 
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+      'x-api-key': apiKey,
     },
-    body: JSON.stringify(task),
+    body: JSON.stringify(request),
   })
 
   if (!response.ok) {
     const body = await response.text().catch(() => '')
-    logger.error('[SchedulerbotClient.sendTask] request failed', {
+    logger.error('[SchedulerbotClient.sendBatch] request failed', {
       status: response.status,
-      externalId: task.external_id,
       body,
     })
     throw Object.assign(
@@ -68,11 +76,11 @@ export async function sendTaskToSchedulerbot(
     )
   }
 
-  const result = await response.json() as SchedulerbotTaskResult
-  logger.info('[SchedulerbotClient.sendTask] task dispatched', {
-    id: result.id,
-    externalId: result.external_id,
+  const result = await response.json() as SchedulerbotBatchResult
+  logger.info('[SchedulerbotClient.sendBatch] batch dispatched', {
     created: result.created,
+    skipped: result.skipped,
+    failed: result.failed,
   })
 
   return result

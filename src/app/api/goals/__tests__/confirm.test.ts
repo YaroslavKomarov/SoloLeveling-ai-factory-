@@ -188,7 +188,7 @@ describe('POST /api/goals/confirm', () => {
     )
   })
 
-  it('material notes: createNote called for each material at path matching domains/{sphere}/{goal}/materials/...', async () => {
+  it('material notes: createNote called for each material at path matching {sphere}/{goal}/materials/...', async () => {
     const tasks = [makeQueueTask()]
     const materials = [
       { title: 'Python Tutorial', content: 'Some content', url: 'https://example.com/python' },
@@ -217,11 +217,11 @@ describe('POST /api/goals/confirm', () => {
     // Find material note calls
     const materialNotePaths = createNoteCalls.filter(p => p.includes('/materials/'))
     expect(materialNotePaths.length).toBe(2)
-    expect(materialNotePaths[0]).toMatch(/^domains\/learning\/learn-python\/materials\/1-/)
-    expect(materialNotePaths[1]).toMatch(/^domains\/learning\/learn-python\/materials\/2-/)
+    expect(materialNotePaths[0]).toMatch(/^learning\/learn-python\/materials\/1-/)
+    expect(materialNotePaths[1]).toMatch(/^learning\/learn-python\/materials\/2-/)
   })
 
-  it('goal note path uses domains/{sphere}/{goal}/goal.md format', async () => {
+  it('goal note path uses {sphere}/{goal}/goal.md format', async () => {
     const req = new NextRequest('http://localhost/api/goals/confirm', {
       method: 'POST',
       body: JSON.stringify({
@@ -242,9 +242,8 @@ describe('POST /api/goals/confirm', () => {
     const goalNoteCall = createNoteCalls.find(p => p.endsWith('/goal.md'))
 
     expect(goalNoteCall).toBeDefined()
-    expect(goalNoteCall).toMatch(/^domains\//)
-    // Old format was: `${sphereName}/${goal.title}/goal.md` — should NOT match that
-    expect(goalNoteCall).not.toMatch(/^Learning\//)
+    expect(goalNoteCall).toMatch(/^learning\/learn-python\/goal\.md$/)
+    expect(goalNoteCall).not.toMatch(/^domains\//)
   })
 
   it('no calendar: createTaskEvent and fetchBusyIntervals are not imported or called', async () => {
