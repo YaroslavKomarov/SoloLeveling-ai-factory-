@@ -134,25 +134,26 @@ export async function POST(request: NextRequest) {
     after(async () => {
       try {
         const sphere = await getSphereById(supabase, sphereId)
-        const sphereSlug = (sphere?.name ?? 'unknown').toLowerCase().replace(/\s+/g, '-')
-        const goalSlug = goal.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)
+        const sphereName = (sphere?.name ?? 'Unknown Sphere').replace(/\//g, '-').trim()
+        const goalTitle = goal.title.replace(/\//g, '-').trim()
         const questChecklist = createdQuests
           .map((q) => `- [ ] ${q.title} (target: ${q.target_value} ${q.unit})`)
           .join('\n')
 
+        logger.debug('Goal note path', { sphereName, goalTitle })
         await createNote(supabase, {
           user_id: user.id,
-          path: `${sphereSlug}/${goalSlug}/goal.md`,
+          path: `${sphereName}/${goalTitle}/goal.md`,
           title: goal.title,
           content: `---\ntype: goal\ngoal_id: ${goal.id}\nsphere_id: ${sphereId}\nstart_date: ${today}\ndeadline_date: ${deadlineDate ?? 'none'}\n---\n# ${goal.title}\n\n## Key Results\n${questChecklist}\n`,
         })
-        logger.info('Goal note auto-created', { goalId: goal.id, sphereSlug, goalSlug })
+        logger.info('Goal note auto-created', { goalId: goal.id, sphereName, goalTitle })
 
         // Save materials as KB notes
         for (let i = 0; i < (materials?.length ?? 0); i++) {
           const material = materials![i]
           const materialSlug = material.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30)
-          const path = `${sphereSlug}/${goalSlug}/materials/${i + 1}-${materialSlug}.md`
+          const path = `${sphereName}/${goalTitle}/materials/${i + 1}-${materialSlug}.md`
           const content = `---\ntitle: "${material.title}"\nurl: ${material.url ?? 'none'}\ndate: ${today}\n---\n\n${material.content}`
           logger.debug('saving material note', { path, contentLength: content.length })
           await createNote(supabase, {
