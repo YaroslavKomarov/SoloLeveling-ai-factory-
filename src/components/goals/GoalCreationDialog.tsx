@@ -10,6 +10,7 @@ import { useGoalDialogStore } from '@/store/goal-dialog'
 import { useGoalsStore } from '@/store/goals'
 import { generateTaskQueue } from '@/lib/tasks/queue-generator'
 import { createLogger } from '@/lib/logger'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import type { QuestDraft } from '@/lib/supabase/types'
 
 const logger = createLogger('GoalCreationDialog')
@@ -30,6 +31,7 @@ export function GoalCreationDialog() {
   } = useGoalDialogStore()
 
   const addGoal = useGoalsStore(s => s.addGoal)
+  const isMobile = useIsMobile()
 
   const [inputValue, setInputValue] = useState('')
   const [editedContent, setEditedContent] = useState('')
@@ -397,7 +399,7 @@ export function GoalCreationDialog() {
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
       e.preventDefault()
       sendMessage(inputValue)
     }
@@ -773,15 +775,24 @@ export function GoalCreationDialog() {
                 >
                   <Link size={14} />
                 </button>
-                <Textarea
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={isReadyToGenerate ? 'Reply to confirm and generate your plan...' : 'Describe your goal... (Enter to send, Shift+Enter for newline)'}
-                  rows={2}
-                  disabled={isLoading}
-                  style={{ resize: 'none', flex: 1 }}
-                />
+                <div style={{ flex: 1 }}>
+                  <Textarea
+                    value={inputValue}
+                    onChange={(e) => {
+                      setInputValue(e.target.value)
+                      logger.debug('input changed', { phase, inputLength: e.target.value.length })
+                    }}
+                    onKeyDown={handleKeyDown}
+                    placeholder={isReadyToGenerate
+                      ? 'Reply to confirm and generate your plan...'
+                      : isMobile
+                        ? 'Describe your goal...'
+                        : 'Describe your goal... (Enter to send, Shift+Enter for newline)'}
+                    rows={4}
+                    disabled={isLoading}
+                    style={{ resize: 'none', minHeight: '100px' }}
+                  />
+                </div>
                 <Button
                   onClick={() => sendMessage(inputValue)}
                   isLoading={isLoading}

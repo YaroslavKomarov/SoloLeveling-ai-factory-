@@ -19,6 +19,7 @@ import { Send, Loader2 } from 'lucide-react'
 import { useOnboardingStore } from '@/store/onboarding'
 import { subscribeToPushAction } from '@/app/(auth)/onboarding/actions'
 import { createLogger } from '@/lib/logger'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import type { ActivityPeriodRow } from '@/lib/supabase/types'
 
 const logger = createLogger('OnboardingChat')
@@ -260,6 +261,7 @@ function MessageBubble({
 // =============================================================
 
 export function OnboardingChat() {
+  const isMobile = useIsMobile()
   const router = useRouter()
 
   const messages = useOnboardingStore((s) => s.messages)
@@ -509,12 +511,12 @@ export function OnboardingChat() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
         e.preventDefault()
         handleSubmit()
       }
     },
-    [handleSubmit]
+    [handleSubmit, isMobile]
   )
 
   // Determine if SchedulerBot block should be shown (phase 3 marker)

@@ -285,7 +285,7 @@ export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: 
                 <label style={{ fontFamily: 'Cinzel, serif', fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>
                   Icon
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: '0.375rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(36px, 1fr))', gap: '0.375rem' }}>
                   {SPHERE_ICONS.map((icon) => (
                     <button
                       key={icon}
@@ -296,7 +296,7 @@ export function CreateSphereModal({ isOpen, onClose, userId, existingSpheres }: 
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        width: '36px',
+                        width: '100%',
                         height: '36px',
                         background: 'none',
                         border: `1px solid ${selectedIcon === icon ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.1)'}`,

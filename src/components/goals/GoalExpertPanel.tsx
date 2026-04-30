@@ -339,7 +339,7 @@ function GoalChatSessionList({ goalId, onClose, onSessionsLoaded }: { goalId: st
 // GoalChatWindow — right panel
 // =============================================================
 
-function GoalChatWindow({ goalId }: { goalId: string }) {
+function GoalChatWindow({ goalId, onShowSessionList }: { goalId: string; onShowSessionList?: () => void }) {
   const sessions = useGoalExpertStore((s) => s.sessions)
   const activeSessionId = useGoalExpertStore((s) => s.activeSessionId)
   const messages = useGoalExpertStore((s) => s.messages)
@@ -708,20 +708,55 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
 
   if (!activeSessionId || !activeSession) {
     return (
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontFamily: 'Cormorant, serif',
-          fontSize: '15px',
-          color: 'rgba(255,255,255,0.2)',
-          textAlign: 'center',
-          padding: '32px',
-        }}
-      >
-        Select a session or create a new chat.
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
+        {isMobile && onShowSessionList && (
+          <div
+            style={{
+              padding: '8px 16px',
+              borderBottom: '1px solid rgba(255,255,255,0.06)',
+              display: 'flex',
+              alignItems: 'center',
+              flexShrink: 0,
+              overflow: 'hidden',
+            }}
+          >
+            <button
+              onClick={onShowSessionList}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'rgba(255,255,255,0.4)',
+                padding: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontFamily: 'Cinzel, serif',
+                fontSize: '10px',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}
+            >
+              <List size={14} />
+              Sessions
+            </button>
+          </div>
+        )}
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontFamily: 'Cormorant, serif',
+            fontSize: '15px',
+            color: 'rgba(255,255,255,0.2)',
+            textAlign: 'center',
+            padding: '32px',
+          }}
+        >
+          Select a session or create a new chat.
+        </div>
       </div>
     )
   }
@@ -745,8 +780,32 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
           alignItems: 'center',
           gap: '8px',
           flexShrink: 0,
+          overflow: 'hidden',
         }}
       >
+        {isMobile && onShowSessionList && (
+          <button
+            onClick={onShowSessionList}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'rgba(255,255,255,0.4)',
+              padding: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontFamily: 'Cinzel, serif',
+              fontSize: '10px',
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              flexShrink: 0,
+            }}
+          >
+            <List size={14} />
+            Sessions
+          </button>
+        )}
         <span
           style={{
             fontFamily: 'Cinzel, serif',
@@ -1206,18 +1265,7 @@ export function GoalExpertPanel({ goalId, initialTaskSession }: GoalExpertPanelP
 
       {/* Chat window: full-width on mobile */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
-        {isMobile && (
-          <div style={{ padding: '8px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-            <button
-              onClick={() => setShowSessionList(true)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: '4px', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: 'Cinzel, serif', fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase' }}
-            >
-              <List size={14} />
-              Sessions
-            </button>
-          </div>
-        )}
-        <GoalChatWindow goalId={goalId} />
+        <GoalChatWindow goalId={goalId} onShowSessionList={isMobile ? () => setShowSessionList(true) : undefined} />
       </div>
     </div>
   )

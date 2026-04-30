@@ -173,12 +173,12 @@ export function GoalDialogModal({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
         e.preventDefault()
         sendMessage()
       }
     },
-    [sendMessage]
+    [sendMessage, isMobile]
   )
 
   if (!mounted) return null
@@ -612,10 +612,13 @@ export function GoalDialogModal({
             >
               <textarea
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value)
+                  logger.debug('GoalDialog input changed', { inputLength: e.target.value.length })
+                }}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask your expert advisor…"
-                rows={2}
+                rows={4}
                 disabled={isLoading}
                 style={{
                   flex: 1,
@@ -625,11 +628,13 @@ export function GoalDialogModal({
                   resize: 'none',
                   padding: '0.625rem 0.875rem',
                   fontFamily: 'Cormorant, serif',
-                  fontSize: '0.9375rem',
+                  fontSize: '1rem',
                   lineHeight: 1.5,
                   color: 'rgba(255,255,255,0.85)',
                   caretColor: accentColor,
                   opacity: isLoading ? 0.5 : 1,
+                  minHeight: '6rem',
+                  ...(isMobile && { minHeight: '7rem' }),
                 }}
               />
               <button
@@ -650,7 +655,7 @@ export function GoalDialogModal({
                   flexShrink: 0,
                   transition: 'all 0.15s',
                 }}
-                title="Send (Enter)"
+                title={isMobile ? 'Send' : 'Send (Enter)'}
               >
                 <Send size={15} />
               </button>

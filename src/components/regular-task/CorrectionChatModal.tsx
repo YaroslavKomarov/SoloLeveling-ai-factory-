@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { X, Send, Loader2, CheckCircle } from 'lucide-react'
 import { createLogger } from '@/lib/logger'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const logger = createLogger('CorrectionChatModal')
 
@@ -26,6 +27,7 @@ const SENTINEL_START = '[CORRECTION_READY]'
 const SENTINEL_END = '[/CORRECTION_READY]'
 
 export function CorrectionChatModal({ taskId, taskTitle, onClose, onCorrectionApplied }: Props) {
+  const isMobile = useIsMobile()
   const [step, setStep] = useState<Step>('chat')
   const [messages, setMessages] = useState<Message[]>([])
   const [streamingContent, setStreamingContent] = useState('')
@@ -143,12 +145,12 @@ export function CorrectionChatModal({ taskId, taskTitle, onClose, onCorrectionAp
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
         e.preventDefault()
         handleSend()
       }
     },
-    [handleSend]
+    [handleSend, isMobile]
   )
 
   const handleApply = useCallback(async () => {
@@ -320,7 +322,9 @@ export function CorrectionChatModal({ taskId, taskTitle, onClose, onCorrectionAp
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Describe what worked or didn't work... (Enter to send)"
+            placeholder={isMobile
+              ? "Describe what worked or didn't work..."
+              : "Describe what worked or didn't work... (Enter to send)"}
             disabled={isStreaming}
             rows={2}
             className="flex-1 bg-[#0d0f14] border border-white/10 text-white/90 text-sm font-['Cormorant'] px-3 py-2 resize-none focus:outline-none focus:border-white/20 disabled:opacity-50 leading-relaxed"

@@ -143,12 +143,12 @@ export function GoalNotesModal({ goal, onClose }: GoalNotesModalProps) {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
         e.preventDefault()
         void sendNote()
       }
     },
-    [sendNote]
+    [sendNote, isMobile]
   )
 
   if (!mounted) return null
@@ -337,7 +337,9 @@ export function GoalNotesModal({ goal, onClose }: GoalNotesModalProps) {
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Add a note… (Enter to send, Shift+Enter for new line)"
+                placeholder={isMobile
+                  ? 'Add a note…'
+                  : 'Add a note… (Enter to send, Shift+Enter for new line)'}
                 rows={3}
                 disabled={isSending}
                 style={{

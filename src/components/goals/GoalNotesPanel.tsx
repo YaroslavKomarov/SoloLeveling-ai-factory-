@@ -12,6 +12,7 @@ import { FileText, Send } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { createLogger } from '@/lib/logger'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import type { GoalRow, NoteRow } from '@/lib/supabase/types'
 
 const logger = createLogger('GoalNotesPanel')
@@ -35,6 +36,7 @@ export function GoalNotesPanel({ goal }: GoalNotesPanelProps) {
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
+  const isMobile = useIsMobile()
   const accentColor = TYPE_ACCENT[goal.goal_type]
 
   // Load notes on mount
@@ -119,12 +121,12 @@ export function GoalNotesPanel({ goal }: GoalNotesPanelProps) {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
         e.preventDefault()
         void sendNote()
       }
     },
-    [sendNote]
+    [sendNote, isMobile]
   )
 
   return (
@@ -256,8 +258,10 @@ export function GoalNotesPanel({ goal }: GoalNotesPanelProps) {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Add a note… (Enter to send, Shift+Enter for new line)"
-            rows={3}
+            placeholder={isMobile
+              ? 'Add a note…'
+              : 'Add a note… (Enter to send, Shift+Enter for new line)'}
+            rows={5}
             disabled={isSending}
             style={{
               flex: 1,
@@ -267,12 +271,13 @@ export function GoalNotesPanel({ goal }: GoalNotesPanelProps) {
               resize: 'none',
               padding: '0.625rem 0.875rem',
               fontFamily: 'Cormorant, serif',
-              fontSize: '0.9375rem',
+              fontSize: '1rem',
               lineHeight: 1.6,
               color: 'rgba(255,255,255,0.85)',
               caretColor: accentColor,
               boxSizing: 'border-box',
               opacity: isSending ? 0.5 : 1,
+              minHeight: '7rem',
             }}
           />
           <button

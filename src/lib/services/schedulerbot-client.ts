@@ -45,6 +45,40 @@ function getConfig(): { url: string; apiKey: string } {
   return { url, apiKey }
 }
 
+export async function completeTaskInSchedulerbot(
+  schedulerbotToken: string,
+  externalId: string,
+): Promise<void> {
+  const { url, apiKey } = getConfig()
+  const endpoint = `${url}/api/tasks/${externalId}/complete`
+
+  logger.info('[SchedulerbotClient.completeTask] calling', { externalId })
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+    },
+    body: JSON.stringify({ schedulerbot_token: schedulerbotToken }),
+  })
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    logger.error('[SchedulerbotClient.completeTask] failed', {
+      externalId,
+      status: response.status,
+      body,
+    })
+    throw Object.assign(
+      new Error(`ShedulerBot complete API error ${response.status}: ${body}`),
+      { code: response.status }
+    )
+  }
+
+  logger.info('[SchedulerbotClient.completeTask] success', { externalId })
+}
+
 export async function sendBatchToSchedulerbot(
   request: SchedulerbotBatchRequest
 ): Promise<SchedulerbotBatchResult> {

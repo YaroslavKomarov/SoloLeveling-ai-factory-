@@ -13,6 +13,7 @@ import { useKnowledgeStore } from '@/store/knowledge'
 import type { ChatMessage } from '@/store/knowledge'
 import { MAX_HISTORY_MESSAGES } from '@/lib/agents/knowledge-rag/constants'
 import { createLogger } from '@/lib/logger'
+import { useIsMobile } from '@/hooks/useIsMobile'
 
 const logger = createLogger('RagChatPanel')
 
@@ -20,6 +21,7 @@ export function RagChatPanel() {
   // [FIX:T01] Split into individual selectors to avoid Zustand getSnapshot infinite loop.
   // Inline object selector `(s) => ({ ... })` creates a new object on every call,
   // causing React to detect "state change" → infinite re-render.
+  const isMobile = useIsMobile()
   const chatMessages = useKnowledgeStore((s) => s.chatMessages)
   const isChatLoading = useKnowledgeStore((s) => s.isChatLoading)
   const addChatMessage = useKnowledgeStore((s) => s.addChatMessage)
@@ -122,12 +124,12 @@ export function RagChatPanel() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
+      if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
         e.preventDefault()
         sendMessage()
       }
     },
-    [sendMessage]
+    [sendMessage, isMobile]
   )
 
   const handleClearChat = useCallback(() => {
