@@ -29,9 +29,9 @@ export const searchNotes = tool({
   inputSchema: z.object({
     userId: z.string().describe('The user ID to search notes for'),
     query: z.string().describe('The natural-language search query'),
-    limit: z.number().int().min(1).max(20).optional().default(5).describe('Max results to return (default 5)'),
+    limit: z.number().int().min(1).max(20).optional().default(8).describe('Max results to return (default 8)'),
   }),
-  execute: async ({ userId, query, limit = 5 }) => {
+  execute: async ({ userId, query, limit = 8 }) => {
     logger.debug('searchNotes called', { userId, queryLength: query.length, limit })
 
     try {
@@ -73,7 +73,7 @@ export const searchNotes = tool({
         query_embedding: queryEmbedding,
         match_user_id: userId,
         match_count: limit,
-        match_threshold: 0.5,
+        match_threshold: 0.3,
       })
 
       if (error) {
@@ -195,7 +195,57 @@ export const listAllNotes = tool({
 })
 
 // =============================================================
-// Tool 4: getBacklinkedNotes
+// Tool 4: searchNotesByKeyword
+// ILIKE keyword search — fallback when semantic search yields few results.
+// Does not require OpenAI embedding.
+// =============================================================
+
+export const searchNotesByKeyword = tool({
+  description:
+    'Search notes by keyword using ILIKE pattern matching on title and content. ' +
+    'Does NOT require embedding — works offline. ' +
+    'Use when semantic search returned fewer than 2 relevant results, or when searching for a specific term, name, or phrase.',
+  inputSchema: z.object({
+    userId: z.string().describe('The user ID'),
+    keyword: z.string().describe('The keyword or phrase to search for'),
+    limit: z.number().int().min(1).max(20).optional().default(8).describe('Max results to return (default 8)'),
+  }),
+  execute: async ({ userId, keyword, limit = 8 }) => {
+    logger.debug('searchNotesByKeyword called', { userId, keyword, limit })
+
+    try {
+      const supabase = await createClient()
+      const { data: notes, error } = await supabase
+        .from('notes')
+        .select('id, title, path, content')
+        .eq('user_id', userId)
+        .or(`title.ilike.%${keyword}%,content.ilike.%${keyword}%`)
+        .limit(limit)
+
+      if (error) {
+        logger.error('searchNotesByKeyword failed', { userId, keyword, error: error.message })
+        return { results: [], error: error.message }
+      }
+
+      const results = (notes ?? []).map((n) => ({
+        noteId: n.id,
+        title: n.title,
+        path: n.path,
+        preview: n.content.slice(0, 200),
+      }))
+
+      logger.debug('searchNotesByKeyword results', { userId, keyword, count: results.length })
+      return { results, count: results.length }
+
+    } catch (err) {
+      logger.error('searchNotesByKeyword error', { userId, keyword, error: err instanceof Error ? err.message : String(err) })
+      return { results: [], error: 'Keyword search failed' }
+    }
+  },
+})
+
+// =============================================================
+// Tool 5: getBacklinkedNotes
 // Finds notes that link back to a given title (graph traversal).
 // =============================================================
 
