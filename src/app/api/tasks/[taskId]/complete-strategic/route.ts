@@ -17,6 +17,7 @@ import { completeTask } from '@/lib/services/task-execution'
 import { getNoteByPath, createNote, updateNote } from '@/lib/supabase/notes'
 import { slugifyTitle } from '@/lib/agents/strategic-task/context'
 import { createLogger } from '@/lib/logger'
+import { notifySchedulerbotComplete } from '@/lib/services/schedulerbot-notify'
 import type { TaskRow } from '@/lib/supabase/types'
 
 const logger = createLogger('api/tasks/[taskId]/complete-strategic')
@@ -155,6 +156,9 @@ export async function POST(request: NextRequest, { params }: Props) {
       })
     }
     logger.info('[POST complete-strategic] note saved', { noteId: note.id, notePath })
+
+    // Notify SchedulerBot — non-fatal, errors handled inside the service
+    await notifySchedulerbotComplete(supabase as any, user.id, taskId)
 
     // Revalidate pages
     try {
