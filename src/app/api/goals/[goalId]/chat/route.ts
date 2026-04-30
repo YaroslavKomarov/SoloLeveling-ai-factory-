@@ -7,7 +7,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createLogger } from '@/lib/logger'
-import type { GoalChatSessionInsert } from '@/lib/supabase/types'
+import type { GoalChatSessionInsert, GoalChatSessionRow } from '@/lib/supabase/types'
 
 const logger = createLogger('goals/chat')
 
@@ -101,6 +101,25 @@ export async function POST(
     if (goalError || !goal) {
       logger.warn('[goals/chat] Goal not found or not owned', { goalId, userId: user.id })
       return NextResponse.json({ error: 'Goal not found' }, { status: 404 })
+    }
+
+    // Dedup: if task session with this task_id already exists, return it instead of creating a duplicate
+    // Destructure to avoid TypeScript control-flow narrowing issues with `body` further down
+    const { session_type: bodySessionType, task_id: bodyTaskId } = body
+    if (bodySessionType === 'task' && bodyTaskId) {
+      const { data: existingSessions } = await supabase
+        .from('goal_chat_sessions')
+        .select('*')
+        .eq('goal_id', goalId)
+        .eq('task_id', bodyTaskId)
+        .eq('user_id', user.id)
+        .limit(1)
+
+      const existingSession = (existingSessions as unknown as GoalChatSessionRow[] | null)?.[0]
+      if (existingSession) {
+        logger.debug('[goals/chat] returning existing task session (dedup)', { taskId: bodyTaskId, sessionId: existingSession.id })
+        return NextResponse.json({ session: existingSession })
+      }
     }
 
     const insert: GoalChatSessionInsert = {

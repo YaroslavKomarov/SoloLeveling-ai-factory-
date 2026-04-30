@@ -54,7 +54,7 @@ interface GoalExpertPanelProps {
 // GoalChatSessionList — left panel
 // =============================================================
 
-function GoalChatSessionList({ goalId, onClose }: { goalId: string; onClose?: () => void }) {
+function GoalChatSessionList({ goalId, onClose, onSessionsLoaded }: { goalId: string; onClose?: () => void; onSessionsLoaded?: () => void }) {
   const sessions = useGoalExpertStore((s) => s.sessions)
   const activeSessionId = useGoalExpertStore((s) => s.activeSessionId)
   const setSessions = useGoalExpertStore((s) => s.setSessions)
@@ -76,6 +76,7 @@ function GoalChatSessionList({ goalId, onClose }: { goalId: string; onClose?: ()
         const res = await fetch(`/api/goals/${goalId}/chat`)
         if (!res.ok) {
           logger.error('[GoalExpertPanel] failed to load sessions', { status: res.status })
+          onSessionsLoaded?.() // unblock parent on error response
           return
         }
         const data = await res.json() as { sessions: GoalChatSession[] }
@@ -86,8 +87,10 @@ function GoalChatSessionList({ goalId, onClose }: { goalId: string; onClose?: ()
         if (data.sessions.length > 0) {
           setActiveSession(data.sessions[0].id)
         }
+        onSessionsLoaded?.()
       } catch (err) {
         logger.error('[GoalExpertPanel] sessions load error', { error: err instanceof Error ? err.message : String(err) })
+        onSessionsLoaded?.() // unblock parent even on error
       }
     }
     loadSessions()
@@ -280,6 +283,21 @@ function GoalChatSessionList({ goalId, onClose }: { goalId: string; onClose?: ()
                   <Lock size={9} style={{ color: 'rgba(255,255,255,0.2)', flexShrink: 0 }} />
                 )}
 
+                {/* Pulsing dot — active (resumable) task session */}
+                {isTask && !isReadonly && (
+                  <div
+                    title="Session in progress — click to continue"
+                    style={{
+                      width: '7px',
+                      height: '7px',
+                      borderRadius: '50%',
+                      backgroundColor: '#a855f7',
+                      flexShrink: 0,
+                      animation: 'pulse-dot 2s ease-in-out infinite',
+                    }}
+                  />
+                )}
+
                 {/* Delete button (general sessions only, on hover) */}
                 {!isTask && hoveredId === session.id && !isReadonly && (
                   <button
@@ -311,6 +329,7 @@ function GoalChatSessionList({ goalId, onClose }: { goalId: string; onClose?: ()
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse-dot { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
       `}</style>
     </div>
   )
@@ -678,12 +697,14 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
     }
   }, [inputValue, isLoading, activeSessionId, isReadonly, messages, sessions, activeTaskId, getRemainingMs, goalId, addMessage, setLoading, setStreaming, updateSession])
 
+  const isMobile = useIsMobile()
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
       e.preventDefault()
       void sendMessage()
     }
-  }, [sendMessage])
+  }, [sendMessage, isMobile])
 
   if (!activeSessionId || !activeSession) {
     return (
@@ -711,8 +732,8 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        height: '100%',
         minWidth: 0,
+        minHeight: 0,
       }}
     >
       {/* Session header */}
@@ -768,6 +789,7 @@ function GoalChatWindow({ goalId }: { goalId: string }) {
           display: 'flex',
           flexDirection: 'column',
           gap: '12px',
+          minHeight: 0,
         }}
       >
         {activeMessages.length === 0 && !streamingContent && (
@@ -1095,51 +1117,59 @@ export function GoalExpertPanel({ goalId, initialTaskSession }: GoalExpertPanelP
   const setActiveSession = useGoalExpertStore((s) => s.setActiveSession)
   const sessions = useGoalExpertStore((s) => s.sessions)
   const hasCreatedInitial = useRef(false)
+  const [sessionsLoaded, setSessionsLoaded] = useState(false)
 
-  // Auto-create task session when initialTaskSession is provided
+  // Auto-create (or resume) task session after sessions are confirmed loaded from API
   useEffect(() => {
-    if (!initialTaskSession || hasCreatedInitial.current) return
+    if (!sessionsLoaded || !initialTaskSession || hasCreatedInitial.current) return
 
-    // Wait until sessions are loaded to avoid duplicates
-    const timer = setTimeout(async () => {
-      if (hasCreatedInitial.current) return
+    logger.debug('[GoalExpertPanel] sessions loaded, checking initialTaskSession', { taskId: initialTaskSession.taskId, sessionCount: sessions.length })
 
-      // Check if a task session already exists for this task
-      const existing = sessions.find(
-        (s) => s.session_type === 'task' && s.task_id === initialTaskSession.taskId
-      )
-      if (existing) {
-        setActiveSession(existing.id)
-        hasCreatedInitial.current = true
-        logger.debug('[GoalDetailClient] newTaskSession param detected — reusing existing session', { taskId: initialTaskSession.taskId })
-        return
-      }
+    // Check if a task session already exists for this task (server dedup + client guard)
+    const existing = sessions.find(
+      (s) => s.session_type === 'task' && s.task_id === initialTaskSession.taskId
+    )
+    if (existing) {
+      setActiveSession(existing.id)
+      hasCreatedInitial.current = true
+      logger.debug('[GoalExpertPanel] resuming existing task session', { taskId: initialTaskSession.taskId, sessionId: existing.id })
+      return
+    }
 
-      logger.debug('[GoalDetailClient] newTaskSession param detected', { taskId: initialTaskSession.taskId })
+    logger.debug('[GoalExpertPanel] creating new task session', { taskId: initialTaskSession.taskId })
+    hasCreatedInitial.current = true // set early to prevent double-fire
+
+    async function createTaskSession() {
       try {
         const res = await fetch(`/api/goals/${goalId}/chat`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title: initialTaskSession.taskTitle,
+            title: initialTaskSession!.taskTitle,
             session_type: 'task',
-            task_id: initialTaskSession.taskId,
+            task_id: initialTaskSession!.taskId,
           }),
         })
         if (res.ok) {
           const data = await res.json() as { session: GoalChatSession }
-          addSession(data.session)
+          // Server may return existing session (dedup) — avoid duplicate in store
+          const alreadyInStore = useGoalExpertStore.getState().sessions.some((s) => s.id === data.session.id)
+          if (!alreadyInStore) addSession(data.session)
           setActiveSession(data.session.id)
-          hasCreatedInitial.current = true
+          logger.debug('[GoalExpertPanel] task session ready', { sessionId: data.session.id })
+        } else {
+          logger.error('[GoalExpertPanel] failed to create/fetch task session', { status: res.status })
+          hasCreatedInitial.current = false // allow retry
         }
       } catch (err) {
-        logger.error('[GoalExpertPanel] failed to create initial task session', { error: err instanceof Error ? err.message : String(err) })
+        logger.error('[GoalExpertPanel] create task session error', { error: err instanceof Error ? err.message : String(err) })
+        hasCreatedInitial.current = false // allow retry
       }
-    }, 500) // short delay for sessions to load
+    }
 
-    return () => clearTimeout(timer)
+    void createTaskSession()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialTaskSession, sessions, goalId])
+  }, [sessionsLoaded, initialTaskSession, goalId])
 
   const isMobile = useIsMobile()
   const [showSessionList, setShowSessionList] = useState(false)
@@ -1171,11 +1201,11 @@ export function GoalExpertPanel({ goalId, initialTaskSession }: GoalExpertPanelP
           } : {}),
         }}
       >
-        <GoalChatSessionList goalId={goalId} onClose={isMobile ? () => setShowSessionList(false) : undefined} />
+        <GoalChatSessionList goalId={goalId} onClose={isMobile ? () => setShowSessionList(false) : undefined} onSessionsLoaded={() => setSessionsLoaded(true)} />
       </div>
 
       {/* Chat window: full-width on mobile */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
         {isMobile && (
           <div style={{ padding: '8px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
             <button
