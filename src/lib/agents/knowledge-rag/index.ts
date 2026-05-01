@@ -10,7 +10,7 @@ import { streamText } from 'ai'
 import { getFastModel } from '@/lib/ai/provider'
 import { createLogger } from '@/lib/logger'
 import { KNOWLEDGE_RAG_SYSTEM_PROMPT } from './prompt'
-import { searchNotes, getNoteContent, getBacklinkedNotes, listAllNotes, searchNotesByKeyword } from './tools'
+import { searchNotes, getNoteContent, getBacklinkedNotes, listAllNotes, searchNotesByKeyword, getIndexStatus } from './tools'
 import { MAX_HISTORY_MESSAGES } from './constants'
 
 export { MAX_HISTORY_MESSAGES }
@@ -89,8 +89,9 @@ export async function runKnowledgeRag(
         getBacklinkedNotes,
         listAllNotes,
         searchNotesByKeyword,
+        getIndexStatus,
       },
-      maxOutputTokens: 2048,
+      maxOutputTokens: 4096,
       stopWhen: ({ steps }) => steps.length >= 8,
       onStepFinish: ({ toolResults }) => {
         if (!toolResults) return

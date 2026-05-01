@@ -5,6 +5,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
 
+// Mock next/cache to prevent errors in test environment
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+}))
+
 // Mock Supabase server client
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(),
@@ -120,6 +125,7 @@ describe('POST /api/notes', () => {
     const note = makeNote()
     mockCreateClient.mockResolvedValue(makeAuthSupabase('user-1') as never)
     mockCreateNote.mockResolvedValue(note)
+    mockEnqueueEmbedding.mockResolvedValue(undefined)
 
     const req = new NextRequest('http://localhost/api/notes', {
       method: 'POST',
@@ -136,6 +142,25 @@ describe('POST /api/notes', () => {
       expect.anything(),
       expect.objectContaining({ path: 'sphere/goal.md', title: 'Goal Note' })
     )
+  })
+
+  it('triggers enqueueEmbedding after note creation', async () => {
+    const note = makeNote()
+    mockCreateClient.mockResolvedValue(makeAuthSupabase('user-1') as never)
+    mockCreateNote.mockResolvedValue(note)
+    mockEnqueueEmbedding.mockResolvedValue(undefined)
+
+    const req = new NextRequest('http://localhost/api/notes', {
+      method: 'POST',
+      body: JSON.stringify({ path: 'sphere/goal.md', title: 'Goal Note', content: '# Hello' }),
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    await postNotesRoute(req)
+
+    // enqueueEmbedding is fire-and-forget, give it a moment
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(mockEnqueueEmbedding).toHaveBeenCalledWith(expect.anything(), 'note-1')
   })
 
   it('returns 400 when path or title is missing', async () => {

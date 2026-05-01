@@ -8,7 +8,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { getAllNotesByUser, createNote, getBacklinks } from '@/lib/supabase/notes'
+import { getAllNotesByUser, createNote, getBacklinks, enqueueEmbedding } from '@/lib/supabase/notes'
 import { createLogger } from '@/lib/logger'
 
 const logger = createLogger('api/notes')
@@ -75,6 +75,11 @@ export async function POST(request: NextRequest) {
     })
 
     logger.info('Note created', { userId: user.id, noteId: note.id, path: note.path })
+
+    logger.debug('enqueueEmbedding triggered for new note', { noteId: note.id })
+    enqueueEmbedding(supabase, note.id).catch((err) => {
+      logger.warn('enqueueEmbedding failed (non-blocking)', { noteId: note.id, error: (err as Error).message })
+    })
 
     revalidatePath('/app/knowledge')
     logger.debug('revalidatePath /app/knowledge triggered', { noteId: note.id })

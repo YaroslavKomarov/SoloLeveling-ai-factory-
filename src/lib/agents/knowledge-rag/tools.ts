@@ -181,7 +181,7 @@ export const listAllNotes = tool({
         noteId: n.id,
         title: n.title,
         path: n.path,
-        preview: n.content.slice(0, 150),
+        preview: n.content.slice(0, 500),
       }))
 
       logger.debug('listAllNotes result', { userId, count: results.length })
@@ -203,7 +203,7 @@ export const listAllNotes = tool({
 export const searchNotesByKeyword = tool({
   description:
     'Search notes by keyword using ILIKE pattern matching on title and content. ' +
-    'Does NOT require embedding — works offline. ' +
+    'Does NOT require embedding — works offline. Returns full note content. ' +
     'Use when semantic search returned fewer than 2 relevant results, or when searching for a specific term, name, or phrase.',
   inputSchema: z.object({
     userId: z.string().describe('The user ID'),
@@ -231,7 +231,7 @@ export const searchNotesByKeyword = tool({
         noteId: n.id,
         title: n.title,
         path: n.path,
-        preview: n.content.slice(0, 200),
+        content: n.content,
       }))
 
       logger.debug('searchNotesByKeyword results', { userId, keyword, count: results.length })
@@ -252,6 +252,7 @@ export const searchNotesByKeyword = tool({
 export const getBacklinkedNotes = tool({
   description:
     'Find all notes in the knowledge base that contain a wikilink to the given note title. ' +
+    'Returns full note content. ' +
     'Use this to discover connected context and traverse the knowledge graph. ' +
     'Supports up to 2 levels of traversal for broader context.',
   inputSchema: z.object({
@@ -288,7 +289,7 @@ export const getBacklinkedNotes = tool({
         noteId: note.id,
         path: note.path,
         title: note.title,
-        contentPreview: note.content.slice(0, 200),
+        content: note.content,
       }))
 
       return { results, totalCount: results.length }
@@ -296,6 +297,82 @@ export const getBacklinkedNotes = tool({
     } catch (err) {
       logger.error('getBacklinkedNotes error', { userId, noteTitle, error: err instanceof Error ? err.message : String(err) })
       return { results: [], totalCount: 0, error: 'Backlinks lookup failed' }
+    }
+  },
+})
+
+// =============================================================
+// Tool 6: getIndexStatus
+// Diagnostic tool — reports note count, embedding coverage, queue stats.
+// =============================================================
+
+export const getIndexStatus = tool({
+  description:
+    'Check the RAG indexing status. Returns how many notes exist, how many have embeddings, ' +
+    'and the current state of the embedding queue. Use when the user asks about search health, ' +
+    'why results are empty, or says the RAG is not working.',
+  inputSchema: z.object({
+    userId: z.string().describe('The user ID'),
+  }),
+  execute: async ({ userId }) => {
+    logger.debug('getIndexStatus called', { userId })
+
+    try {
+      const supabase = await createClient()
+
+      const { data: notes, error: notesError } = await supabase
+        .from('notes')
+        .select('id')
+        .eq('user_id', userId)
+
+      if (notesError) {
+        logger.error('getIndexStatus — failed to fetch notes', { userId, error: notesError.message })
+        return { error: notesError.message }
+      }
+
+      const noteIds = (notes ?? []).map((n: { id: string }) => n.id)
+      const totalNotes = noteIds.length
+
+      if (totalNotes === 0) {
+        return { notes: { total: 0 }, embeddings: { total: 0, notesWithEmbeddings: 0 }, queue: { pending: 0, processing: 0, error: 0, done: 0 } }
+      }
+
+      const [embResult, queueResult] = await Promise.all([
+        supabase.from('embeddings').select('note_id').in('note_id', noteIds),
+        supabase.from('embedding_queue').select('status').in('note_id', noteIds),
+      ])
+
+      if (embResult.error) {
+        logger.error('getIndexStatus — failed to query embeddings', { userId, error: embResult.error.message })
+        return { error: embResult.error.message }
+      }
+
+      if (queueResult.error) {
+        logger.error('getIndexStatus — failed to query queue', { userId, error: queueResult.error.message })
+        return { error: queueResult.error.message }
+      }
+
+      const notesWithEmbeddings = new Set((embResult.data ?? []).map((e: { note_id: string }) => e.note_id)).size
+
+      const queueRows = (queueResult.data ?? []) as { status: string }[]
+      const queueStats = { pending: 0, processing: 0, error: 0, done: 0 }
+      for (const row of queueRows) {
+        const s = row.status as keyof typeof queueStats
+        if (s in queueStats) queueStats[s]++
+      }
+
+      const result = {
+        notes: { total: totalNotes },
+        embeddings: { total: embResult.data?.length ?? 0, notesWithEmbeddings },
+        queue: queueStats,
+      }
+
+      logger.debug('getIndexStatus result', { userId, ...result })
+      return result
+
+    } catch (err) {
+      logger.error('getIndexStatus error', { userId, error: err instanceof Error ? err.message : String(err) })
+      return { error: 'Failed to fetch index status' }
     }
   },
 })
